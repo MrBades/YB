@@ -34,6 +34,10 @@ export default function Onboarding({ onCompleteOnboarding }: OnboardingProps) {
 
   const handleNext = (e: FormEvent) => {
     e.preventDefault();
+    if (!navigator.onLine) {
+      alert("⚠️ Network Offline: You must be connected to the internet to set up or register bookkeeping accounts on Yeedem servers.");
+      return;
+    }
     if (step === 1) {
       if (!email || !username) {
         alert("Please complete all registration parameters.");

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { generateInvoicePDF } from '../lib/pdfGenerator';
 import { BusinessProfile } from '../types';
 import { Sparkles, ArrowLeft } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 export default function GuestInvoiceGenerator({ onFinish, onLimitReached, deviceFingerprint }: { onFinish: () => void, onLimitReached: () => void, deviceFingerprint: string }) {
   const [prompt, setPrompt] = useState('');
@@ -18,7 +19,7 @@ export default function GuestInvoiceGenerator({ onFinish, onLimitReached, device
 
   const generate = async (isMagic: boolean) => {
     try {
-      const res = await fetch('/api/guest/invoice-generate', {
+      const res = await apiFetch('/api/guest/invoice-generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

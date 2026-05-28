@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserPlus, ToggleLeft, ToggleRight, Copy, Check } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 interface Staff {
     id: string;
@@ -50,7 +51,7 @@ export default function StaffManagement({
 
         const simFp = deviceFingerprint || localStorage.getItem('simulated_device_fp') || 'unknown';
         const simLoc = approxRegion || localStorage.getItem('simulated_location') || 'NG-Lagos';
-        fetch('/api/staff', {
+        apiFetch('/api/staff', {
             headers: {
                 'x-session-id': sesId,
                 'x-device-fingerprint': simFp,
@@ -107,7 +108,7 @@ export default function StaffManagement({
         // Normalize the name slug
         const processedNameSlug = nameSlug.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
 
-        fetch('/api/staff', {
+        apiFetch('/api/staff', {
             method: 'POST',
             body: JSON.stringify({ 
                 shop_id: 'default_shop', 
@@ -152,7 +153,7 @@ export default function StaffManagement({
         const sesId = localStorage.getItem('session_id') || '';
         const simFp = deviceFingerprint || localStorage.getItem('simulated_device_fp') || 'unknown';
         const simLoc = approxRegion || localStorage.getItem('simulated_location') || 'NG-Lagos';
-        fetch(`/api/staff/${id}`, {
+        apiFetch(`/api/staff/${id}`, {
             method: 'PUT',
             body: JSON.stringify({ is_active: !currentStatus }),
             headers: { 

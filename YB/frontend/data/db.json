@@ -10,46 +10,14 @@
       "business_name": "Yeedem Tech",
       "business_type": "service",
       "shop_slug": "yeedem-tech"
-    },
-    {
-      "id": "1779980851745",
-      "phone_or_email": "+2347062987288",
-      "otp_secret": "1234",
-      "owner_pin": "2015",
-      "full_name": "Jeo man",
-      "business_name": "Jeo Tech",
-      "business_type": "buy_and_sell",
-      "shop_slug": "jeo-tech",
-      "business": {
-        "businessName": "Jeo Tech",
-        "businessType": "buy_and_sell",
-        "phone": "",
-        "address": "",
-        "invoiceTemplatePreference": "classic",
-        "customAccentColor": "#00A6FF",
-        "customFontSize": "md",
-        "customFontFamily": "sans",
-        "customShowLogo": true,
-        "customHeaderTitle": "TAX INVOICE",
-        "customFooterNotes": "This document acts as an official trade journal entry. Please verify balances online.",
-        "customShadowStyle": "md"
-      }
     }
   ],
   "merchantSessions": [
     {
-      "session_id": "1779980923124",
-      "user_id": "1779980851745",
-      "device_fingerprint": "7d2f0fd5373736776f66b5e9cc9c1719",
-      "last_active_ip": "127.0.0.1",
-      "last_active_region": "NG-Lagos",
-      "is_suspicious_locked": false
-    },
-    {
-      "session_id": "1779981174713",
+      "session_id": "1779728330070",
       "user_id": "1779704393933",
-      "device_fingerprint": "dccce33b58621fd92f71add161b12db3",
-      "last_active_ip": "127.0.0.1",
+      "device_fingerprint": "aa476a01760acb1afcf65f1d4ce74a82",
+      "last_active_ip": "197.210.71.111, 169.254.169.126",
       "last_active_region": "NG-Lagos",
       "is_suspicious_locked": false
     }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Lock } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 export default function TerminalView({ shopSlug, workerSlug }: { shopSlug: string; workerSlug: string }) {
     const [pin, setPin] = useState('');
@@ -19,7 +20,7 @@ export default function TerminalView({ shopSlug, workerSlug }: { shopSlug: strin
             setPin(newPin);
             if (newPin.length === 4) {
                 // Verify PIN
-                fetch(`/api/terminal/${shopSlug}/${workerSlug}/pin-verify`, {
+                apiFetch(`/api/terminal/${shopSlug}/${workerSlug}/pin-verify`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ pin: newPin, latitude: location?.lat, longitude: location?.lng })

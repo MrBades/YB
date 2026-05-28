@@ -12,6 +12,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { Product } from '../types';
+import { apiFetch } from '../lib/api';
 
 interface SmartProductWidgetProps {
   isService?: boolean;
@@ -89,7 +90,7 @@ export default function SmartProductWidget({ onSaveProduct, isService = false }:
     setExtractedProduct(null);
 
     try {
-      const res = await fetch('/api/smart-product', {
+      const res = await apiFetch('/api/smart-product', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

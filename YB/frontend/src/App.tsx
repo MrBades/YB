@@ -8,6 +8,7 @@ import GuestInvoiceGenerator from './components/GuestInvoiceGenerator';
 import LandingPage from './components/LandingPage';
 import AboutPage from './components/AboutPage';
 import TermsPage from './components/TermsPage';
+import { apiFetch } from './lib/api';
 import { Customer, Invoice, BusinessProfile, UserState, Product, RestockEvent } from './types';
 import Onboarding from './components/Onboarding';
 import SmartWidget from './components/SmartWidget';
@@ -19,8 +20,11 @@ import CustomersList from './components/CustomersList';
 import InvoiceTheme from './components/InvoiceTheme';
 import InvoiceTemplateSettings from './components/InvoiceTemplateSettings';
 import BackupManager from './components/BackupManager';
+import PWAInstallHelper from './components/PWAInstallHelper';
+import DjangoAdminController from './components/DjangoAdminController';
 import OnboardingSummary from './components/OnboardingSummary';
 import InteractiveTour from './components/InteractiveTour';
+import { formatNaira } from './utils/currency';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area } from 'recharts';
 import { 
   BookOpen, 
@@ -51,13 +55,14 @@ import {
   Eye,
   Download,
   LogOut,
+  Smartphone,
   HelpCircle
 } from 'lucide-react';
 
 export default function App() {
   // Temporary session unlock on load
   useEffect(() => {
-    fetch('/api/admin/unlock-all').then(res => console.log('Unlock attempt:', res.status));
+    apiFetch('/api/admin/unlock-all').then(res => console.log('Unlock attempt:', res.status));
   }, []);
 
   // 1. Core State
@@ -120,7 +125,7 @@ export default function App() {
       const storedSession = localStorage.getItem('session_id');
       if (storedSession) {
         try {
-          const res = await fetch('/api/auth/validate-session', {
+          const res = await apiFetch('/api/auth/validate-session', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -241,7 +246,7 @@ export default function App() {
   }, [deviceFingerprint, simulatedDeviceFp, simulatedLocation]);
 
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await apiFetch('/api/auth/logout', { method: 'POST' });
     localStorage.removeItem('session_id');
     localStorage.removeItem('authorized_phone_or_email');
     localStorage.removeItem('active_screen');
@@ -302,6 +307,52 @@ export default function App() {
   const isService = userState.business?.businessType === 'service';
   const [isTourOpen, setIsTourOpen] = useState(false);
 
+  // Progressive Web App (PWA) installation lifecycle state control
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isAppInstalled, setIsAppInstalled] = useState<boolean>(() => {
+    return window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+  });
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      console.log('⚡ Yeedem Books: PWA installation prompt is ready to trigger.');
+    };
+
+    const handleAppInstalled = () => {
+      setIsAppInstalled(true);
+      setDeferredPrompt(null);
+      console.log('🎉 PWA installation reported successful by the device OS.');
+    };
+
+    window.addEventListener('beforebeforeinstallprompt', handleBeforeInstallPrompt); // backup event definition
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const handleInstallPWA = async () => {
+    if (!deferredPrompt) {
+      alert("⚠️ Manual Setup Required: A native install prompt could not be triggered automatically. If you're using Safari on iOS or certain desktop browsers, please use your browser's 'Add to Home Screen' or 'Install App' options from the menu directly!");
+      return;
+    }
+    try {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log(`PWA Installation outcome: ${outcome}`);
+      setDeferredPrompt(null);
+    } catch (err) {
+      console.error('Error triggering PWA installation:', err);
+    }
+  };
+
+  const [profileTab, setProfileTab] = useState<'settings' | 'django_admin'>('django_admin');
+
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     return localStorage.getItem('theme_dark_mode') === 'true';
   });
@@ -333,6 +384,7 @@ export default function App() {
     }
   }, [customers, userState.email]);
 
+  // Load and auto-sync ledger data for authenticated user of same account across browsers
   useEffect(() => {
     if (userState.authenticated && userState.email) {
       // Migrate customers data if needed
@@ -353,20 +405,82 @@ export default function App() {
 
       // Load initialized data
       const savedCustomers = localStorage.getItem(newCustomersKey);
+      let parsedCustomers: any[] = [];
       if (savedCustomers) {
-        setCustomers(JSON.parse(savedCustomers));
+        try {
+          parsedCustomers = JSON.parse(savedCustomers);
+          setCustomers(parsedCustomers);
+        } catch (e) {
+          setCustomers([]);
+        }
       } else {
         setCustomers([]);
       }
 
       const savedProducts = localStorage.getItem(newProductsKey);
+      let parsedProducts: any[] = [];
       if (savedProducts) {
-        setProducts(JSON.parse(savedProducts));
+        try {
+          parsedProducts = JSON.parse(savedProducts);
+          setProducts(parsedProducts);
+        } catch (e) {
+          setProducts([]);
+        }
       } else {
         setProducts([]);
       }
 
       lastLoadedEmailRef.current = userState.email;
+
+      // Smart Cross-Browser Auto-Sync Engine:
+      // If the browser registers an empty ledger for this account on boot/login,
+      // query the server backups directory to automatically download & restore the latest state.
+      if (parsedCustomers.length === 0 && parsedProducts.length === 0) {
+        const autoSyncFromServer = async () => {
+          try {
+            const token = localStorage.getItem('session_id') || '';
+            const listResponse = await apiFetch('/api/backup/list', {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'x-session-id': token
+              }
+            });
+            if (!listResponse.ok) return;
+            const backups = await listResponse.json();
+            
+            if (backups && backups.length > 0) {
+              const latestBackup = backups[0]; // Filtered & sorted newest first on server
+              const downloadResponse = await apiFetch(`/api/backup/download/${latestBackup.filename}`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'x-session-id': token
+                }
+              });
+              if (downloadResponse.ok) {
+                const payload = await downloadResponse.json();
+                if (payload && payload.data) {
+                  const { customers: restCust, products: restProd, restockLogs: restLogs } = payload.data;
+                  if (restCust) {
+                    setCustomers(restCust);
+                    localStorage.setItem(newCustomersKey, JSON.stringify(restCust));
+                  }
+                  if (restProd) {
+                    setProducts(restProd);
+                    localStorage.setItem(newProductsKey, JSON.stringify(restProd));
+                  }
+                  if (restLogs) {
+                    setRestockLogs(restLogs || []);
+                  }
+                  console.log("🔄 Cross-Browser Auto-Sync: Successfully restored latest ledger state from Yeedem servers.");
+                }
+              }
+            }
+          } catch (syncErr) {
+            console.error("Cross-browser auto-sync from server failed:", syncErr);
+          }
+        };
+        autoSyncFromServer();
+      }
     }
   }, [userState.authenticated, userState.email]);
 
@@ -524,7 +638,7 @@ export default function App() {
         id: `debt_${d.id}`,
         type: 'debt',
         title: `Pending Repayment: ${d.name}`,
-        desc: `Outstanding: ₦${d.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })} (${d.dueText}).`,
+        desc: `Outstanding: ${formatNaira(d.balance)} (${d.dueText}).`,
         extraButton: {
           label: `Settle Balance`,
           action: () => {
@@ -882,8 +996,12 @@ export default function App() {
 
   // 3. Handlers
   const handleCompleteOnboarding = async (name: string, phone: string, address: string, businessType: 'buy_and_sell' | 'service', template: 'classic' | 'modern_blue' | 'kiosk_compact') => {
+    if (!navigator.onLine) {
+      alert("⚠️ Account Onboarding Denied Offline: You must be online to register or update Master Bookkeeping profiles on Yeedem servers.");
+      return;
+    }
     try {
-        const res = await fetch('/api/auth/register-onboarding', {
+        const res = await apiFetch('/api/auth/register-onboarding', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1143,7 +1261,7 @@ export default function App() {
     if (userState.authenticated) {
       try {
         const sid = localStorage.getItem('session_id') || localStorage.getItem('active_session_id');
-        await fetch('/api/business/settings', {
+        await apiFetch('/api/business/settings', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1206,7 +1324,7 @@ export default function App() {
       localStorage.setItem(localBackupsKey, JSON.stringify(backupsList));
 
       const token = localStorage.getItem('session_id') || localStorage.getItem('active_session_id') || '';
-      const response = await fetch('/api/backup/save', {
+      const response = await apiFetch('/api/backup/save', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1261,6 +1379,20 @@ export default function App() {
       return () => clearTimeout(delayTimer);
     }
   }, [userState.authenticated, userState.email, customers.length, products.length]);
+
+  // Automated live backup sync scheduler whenever data mutations occur to ensure multi-browser alignment
+  const mutationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (userState.authenticated && userState.email && (customers.length > 0 || products.length > 0) && navigator.onLine) {
+      if (mutationTimerRef.current) clearTimeout(mutationTimerRef.current);
+      mutationTimerRef.current = setTimeout(() => {
+        triggerDailyAutomatedBackup(true); // force live backup on the server, ensuring real-time multi-browser consistency
+      }, 4000); // 4 seconds debounce to prevent overlapping file writes during steady inputs
+    }
+    return () => {
+      if (mutationTimerRef.current) clearTimeout(mutationTimerRef.current);
+    };
+  }, [customers, products, restockLogs, userState.authenticated, userState.email]);
 
   const handleSelectCustomerInvoiceFeed = (custName: string) => {
     const cust = customers.find(c => c.name.toLowerCase() === custName.toLowerCase());
@@ -1852,7 +1984,7 @@ export default function App() {
                                 <div key={`debt_${d.id}`} className="p-2.5 bg-amber-50/10 hover:bg-amber-50/30 rounded-xl border border-amber-100/30 flex items-start gap-2.5 transition">
                                   <Users className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
                                   <div className="flex-1 min-w-0">
-                                    <p className="font-bold text-gray-900 truncate">{d.name}: Outstanding ₦{d.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                    <p className="font-bold text-gray-900 truncate">{d.name}: Outstanding {formatNaira(d.balance)}</p>
                                     <p className="text-[10px] text-gray-500 font-mono mt-0.5 leading-none">
                                       ({d.dueText})
                                     </p>
@@ -1924,14 +2056,14 @@ export default function App() {
               <div className="flex flex-col items-center">
                 <span className={`text-[#4A5568] uppercase font-bold tracking-wider transition-all duration-300 ${isScrolled ? 'text-[8px] sm:text-[9px]' : 'text-[9px] sm:text-[10px]'}`}>Total Sales</span>
                 <span className={`font-extrabold text-[#0E1338] transition-all duration-300 ${isScrolled ? 'text-xs sm:text-xs mt-0' : 'text-xs sm:text-sm mt-0.5'}`}>
-                  ₦{calculatedMetrics.salesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  {formatNaira(calculatedMetrics.salesTotal)}
                 </span>
               </div>
 
               <div className="flex flex-col items-center border-x border-gray-100 w-full">
                 <span className={`text-[#4A5568] uppercase font-bold tracking-wider transition-all duration-300 ${isScrolled ? 'text-[8px] sm:text-[9px]' : 'text-[9px] sm:text-[10px]'}`}>Paid</span>
                 <span className={`font-extrabold text-[#0E1338] transition-all duration-300 ${isScrolled ? 'text-xs sm:text-xs mt-0' : 'text-xs sm:text-sm mt-0.5'}`}>
-                  ₦{calculatedMetrics.paidTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  {formatNaira(calculatedMetrics.paidTotal)}
                 </span>
               </div>
 
@@ -1943,9 +2075,9 @@ export default function App() {
                 <span className={`text-[#4A5568] uppercase font-bold tracking-wider group-hover:underline transition-all duration-300 ${isScrolled ? 'text-[8px] sm:text-[9px]' : 'text-[9px] sm:text-[10px]'}`}>Debt</span>
                 <span className={`font-extrabold text-[#D32F2F] transition-all duration-300 ${isScrolled ? 'text-xs sm:text-xs mt-0' : 'text-xs sm:text-sm mt-0.5'}`}>
                   {calculatedMetrics.outstandingTotal === 0 ? (
-                    <>₦0.00</>
+                    <>{formatNaira(0)}</>
                   ) : (
-                    <>₦-{calculatedMetrics.outstandingTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</>
+                    <>-{formatNaira(calculatedMetrics.outstandingTotal)}</>
                   )}
                 </span>
               </div>
@@ -2180,6 +2312,20 @@ export default function App() {
                       <span>Guided Onboarding Tour</span>
                     </button>
 
+                    {/* Instant PWA Install Prompt - displays only when install signals are available and not active as standalone app */}
+                    {deferredPrompt && !isAppInstalled && (
+                      <button
+                        onClick={() => {
+                          handleInstallPWA();
+                          setIsSideMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-extrabold transition text-emerald-350 hover:bg-emerald-500/10 border border-emerald-500/30 my-1 animate-pulse"
+                      >
+                        <Smartphone className="w-4 h-4 text-emerald-400" />
+                        <span>Install App Offline</span>
+                      </button>
+                    )}
+
                     <div className="border-t border-white/10 my-4 pt-4">
                       <span className="text-[10px] text-gray-400 uppercase tracking-widest block font-bold mb-2">Information</span>
                     </div>
@@ -2292,7 +2438,7 @@ export default function App() {
                       <div className="bg-gray-50 rounded-2xl p-4">
                         <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider font-mono">Today's Cash Ledger</span>
                         <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
-                          ₦{todayMetrics.cashCollectedToday.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          {formatNaira(todayMetrics.cashCollectedToday)}
                         </p>
                         <p className="text-[9px] text-gray-500 font-mono mt-0.5">Cleared accounts & direct payments</p>
                       </div>
@@ -2300,7 +2446,7 @@ export default function App() {
                       <div className="bg-gray-50 rounded-2xl p-4">
                         <span className="text-[10px] uppercase font-bold text-red-600 tracking-wider font-mono font-sans font-bold">Today's Credit Owed</span>
                         <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
-                          ₦{todayMetrics.debtIssuedToday.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          {formatNaira(todayMetrics.debtIssuedToday)}
                         </p>
                         <p className="text-[9px] text-gray-500 font-mono mt-0.5">Added to client outstanding notebooks</p>
                       </div>
@@ -2308,7 +2454,7 @@ export default function App() {
                       <div className="bg-gray-50 rounded-2xl p-4">
                         <span className="text-[10px] uppercase font-bold text-[#00A6FF] tracking-wider font-mono">Est. Profit Margin</span>
                         <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
-                          ₦{todayMetrics.estimatedProfitToday.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          {formatNaira(todayMetrics.estimatedProfitToday)}
                         </p>
                         <p className="text-[9px] text-gray-500 font-mono mt-0.5">Based on selling price & purchase unit cost</p>
                       </div>
@@ -2318,7 +2464,7 @@ export default function App() {
                       <div className="bg-gray-50 rounded-2xl p-4">
                         <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider font-mono">Total Service Revenue</span>
                         <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
-                          ₦{todayMetrics.cashCollectedToday.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          {formatNaira(todayMetrics.cashCollectedToday)}
                         </p>
                         <p className="text-[9px] text-gray-500 font-mono mt-0.5">Total earnings from completed services</p>
                       </div>
@@ -2334,7 +2480,7 @@ export default function App() {
                       <div className="bg-gray-50 rounded-2xl p-4">
                         <span className="text-[10px] uppercase font-bold text-blue-600 tracking-wider font-mono">Total Outstanding</span>
                         <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
-                          ₦{calculatedMetrics.outstandingTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          {formatNaira(calculatedMetrics.outstandingTotal)}
                         </p>
                         <p className="text-[9px] text-gray-500 font-mono mt-0.5">Total uncollected service fees</p>
                       </div>
@@ -2637,7 +2783,7 @@ export default function App() {
                 <div className="space-y-1">
                   <span className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Gross Sales Volume</span>
                   <p className="text-2xl font-bold text-gray-900 font-sans">
-                    ₦{calculatedMetrics.salesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {formatNaira(calculatedMetrics.salesTotal)}
                   </p>
                 </div>
                 <div className="p-3 bg-blue-50 text-[#00A6FF] rounded-2xl">
@@ -2650,7 +2796,7 @@ export default function App() {
                   <div className="space-y-1">
                     <span className="text-gray-400 text-xs font-semibold uppercase tracking-wider">True Net Profit</span>
                     <p className="text-2xl font-bold text-emerald-600 font-sans">
-                      ₦{calculatedMetrics.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      {formatNaira(calculatedMetrics.netProfit)}
                     </p>
                     {calculatedMetrics.salesTotal > 0 && (
                       <span className="text-[10px] text-emerald-500 font-medium">
@@ -2668,7 +2814,7 @@ export default function App() {
                 <div className="space-y-1">
                   <span className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Cleared Cash immediate</span>
                   <p className="text-2xl font-bold text-emerald-600 font-sans">
-                    ₦{calculatedMetrics.paidTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {formatNaira(calculatedMetrics.paidTotal)}
                   </p>
                 </div>
                 <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
@@ -2687,7 +2833,7 @@ export default function App() {
                     <span className="w-1.5 h-1.5 bg-[#D32F2F] rounded-full animate-ping"></span>
                   </div>
                   <p className="text-2xl font-bold text-[#D32F2F] font-sans">
-                    ₦{calculatedMetrics.outstandingTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {formatNaira(calculatedMetrics.outstandingTotal)}
                   </p>
                   <span className="text-[10px] text-[#D32F2F] font-medium hover:underline block">Manage outstanding entries →</span>
                 </div>
@@ -2877,7 +3023,7 @@ export default function App() {
                                     placeholder="Cost"
                                   />
                                 ) : (
-                                  <>₦{(p.cost_price || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</>
+                                  <>{formatNaira(p.cost_price || 0)}</>
                                 )}
                               </td>
                             )}
@@ -2890,7 +3036,7 @@ export default function App() {
                                   className="w-20 p-1 text-right font-semibold text-xs rounded border border-gray-200 bg-white"
                                 />
                               ) : (
-                                <>₦{p.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</>
+                                <>{formatNaira(p.price)}</>
                               )}
                             </td>
                             <td className="py-3.5 text-center">
@@ -3031,37 +3177,86 @@ export default function App() {
               </button>
             </div>
 
-            <OnboardingSummary 
-              username={userState.username} 
-              email={userState.email} 
-              business={userState.business} 
-              ownerPin={userState.ownerPin} 
+            <PWAInstallHelper 
+              deferredPrompt={deferredPrompt}
+              isAppInstalled={isAppInstalled}
+              onInstall={handleInstallPWA}
             />
 
-            {userState.business && (
-              <InvoiceTemplateSettings 
-                business={userState.business} 
-                onSaveSettings={handleSaveSettings} 
-                darkMode={darkMode}
-                onToggleDarkMode={() => setDarkMode(!darkMode)}
-              />
-            )}
-            {userState.email && (
-              <div id="tour-backup-manager">
-                <BackupManager
-                  userEmail={userState.email}
-                  isAuthenticated={userState.authenticated}
+            {/* Django Admin Control Console & Settings Choice Tab bar */}
+            <div className="flex border-b border-gray-200/40 gap-5 pb-1 mt-4">
+              <button
+                onClick={() => setProfileTab('django_admin')}
+                className={`pb-2 text-sm font-extrabold border-b-2 transition-all flex items-center gap-1.5 ${profileTab === 'django_admin' ? 'border-[#00A6FF] text-[#00A6FF]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+              >
+                📊 Django Admin control desk
+              </button>
+              <button
+                onClick={() => setProfileTab('settings')}
+                className={`pb-2 text-sm font-extrabold border-b-2 transition-all flex items-center gap-1.5 ${profileTab === 'settings' ? 'border-[#00A6FF] text-[#00A6FF]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+              >
+                ⚙️ Merchant & staff preferences
+              </button>
+            </div>
+
+            {profileTab === 'django_admin' && (
+              <div className="animate-fadeIn">
+                <DjangoAdminController
                   customers={customers}
                   products={products}
                   restockLogs={restockLogs}
-                  userBusiness={userState.business}
-                  onRestoreBackup={handleRestoreBackup}
-                  triggerBackupNow={() => triggerDailyAutomatedBackup(true)}
+                  onUpdateCustomers={(newCustomers) => {
+                    setCustomers(newCustomers);
+                    const storageKey = getStorageKey('customers_ledger');
+                    localStorage.setItem(storageKey, JSON.stringify(newCustomers));
+                  }}
+                  onUpdateProducts={(newProducts) => {
+                    setProducts(newProducts);
+                    const storageKey = getStorageKey('inventory_ledger');
+                    localStorage.setItem(storageKey, JSON.stringify(newProducts));
+                  }}
+                  userEmail={userState.email || ''}
                 />
               </div>
             )}
-            <StaffManagement businessName={userState.business?.businessName} onUnauthorized={handleLogout} isSuspiciousLocked={isSuspiciousLocked} deviceFingerprint={simulatedDeviceFp || deviceFingerprint || 'unknown_fp'} approxRegion={simulatedLocation} />
-            <StaffActivityLog onUnauthorized={handleLogout} isSuspiciousLocked={isSuspiciousLocked} deviceFingerprint={simulatedDeviceFp || deviceFingerprint || 'unknown_fp'} approxRegion={simulatedLocation} />
+
+            {profileTab === 'settings' && (
+              <div className="space-y-6 animate-fadeIn">
+                <OnboardingSummary 
+                  username={userState.username} 
+                  email={userState.email} 
+                  business={userState.business} 
+                  ownerPin={userState.ownerPin} 
+                />
+
+                {userState.business && (
+                  <InvoiceTemplateSettings 
+                    business={userState.business} 
+                    onSaveSettings={handleSaveSettings} 
+                    darkMode={darkMode}
+                    onToggleDarkMode={() => setDarkMode(!darkMode)}
+                  />
+                )}
+                
+                {userState.email && (
+                  <div id="tour-backup-manager">
+                    <BackupManager
+                      userEmail={userState.email}
+                      isAuthenticated={userState.authenticated}
+                      customers={customers}
+                      products={products}
+                      restockLogs={restockLogs}
+                      userBusiness={userState.business}
+                      onRestoreBackup={handleRestoreBackup}
+                      triggerBackupNow={() => triggerDailyAutomatedBackup(true)}
+                    />
+                  </div>
+                )}
+                
+                <StaffManagement businessName={userState.business?.businessName} onUnauthorized={handleLogout} isSuspiciousLocked={isSuspiciousLocked} deviceFingerprint={simulatedDeviceFp || deviceFingerprint || 'unknown_fp'} approxRegion={simulatedLocation} />
+                <StaffActivityLog onUnauthorized={handleLogout} isSuspiciousLocked={isSuspiciousLocked} deviceFingerprint={simulatedDeviceFp || deviceFingerprint || 'unknown_fp'} approxRegion={simulatedLocation} />
+              </div>
+            )}
           </div>
         )}
 

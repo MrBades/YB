@@ -16,6 +16,7 @@ import {
   CircleDollarSign
 } from 'lucide-react';
 import { InvoiceItem } from '../types';
+import { apiFetch } from '../lib/api';
 
 interface SmartWidgetProps {
   isService?: boolean;
@@ -528,7 +529,7 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
       }
 
       console.log("Preparing to dispatch to /api/smart-input...");
-      const res = await fetch('/api/smart-input', {
+      const res = await apiFetch('/api/smart-input', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Lock, Smartphone, ShieldCheck, ArrowRightLeft, Sparkles, AlertTriangle, Key } from 'lucide-react';
 import LogoImg from '../assets/images/yeedem_books_logo_1779553023368.png';
+import { apiFetch } from '../lib/api';
 
 export function normalizeContact(phoneOrEmailStr: string): string {
   let input = phoneOrEmailStr.trim();
@@ -73,7 +74,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
     setError('');
     setSimulatedOtpNotice('');
     try {
-      const res = await fetch('/api/auth/probe', {
+      const res = await apiFetch('/api/auth/probe', {
         method: 'POST',
         headers,
         body: JSON.stringify({ phone_or_email: input })
@@ -125,7 +126,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/reset-forgotten-pin', {
+      const res = await apiFetch('/api/auth/reset-forgotten-pin', {
         method: 'POST',
         headers,
         body: JSON.stringify({ phone_or_email: cleanContact, otp: otp.trim(), pin: confirmPin })
@@ -165,13 +166,18 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
       return;
     }
 
+    if (!navigator.onLine) {
+      setError('⚠️ Network Offline: An active internet connection is required to verify account profiles or connect to Yeedem servers.');
+      return;
+    }
+
     setPhoneOrEmail(input);
 
     setLoading(true);
     setError('');
     setSimulatedOtpNotice('');
     try {
-      const res = await fetch('/api/auth/probe', {
+      const res = await apiFetch('/api/auth/probe', {
         method: 'POST',
         headers,
         body: JSON.stringify({ phone_or_email: input })
@@ -196,6 +202,10 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
   };
 
   const verifyOtp = async () => {
+    if (!navigator.onLine) {
+      setError('⚠️ Network Offline: OTP verification requires an internet connection to sync with Yeedem servers.');
+      return;
+    }
     if (otp.trim() !== '1234') {
       setError('Invalid 4-digit OTP. Enter 1234 for simulation.');
       return;
@@ -204,7 +214,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/verify-otp', {
+      const res = await apiFetch('/api/auth/verify-otp', {
         method: 'POST',
         headers,
         body: JSON.stringify({ phone_or_email: cleanContact, otp: otp.trim() })
@@ -247,6 +257,10 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
   };
 
   const handleConfirmPin = async () => {
+    if (!navigator.onLine) {
+      setError('⚠️ Network Offline: Configuring PIN credentials requires an internet connection to sync with Yeedem servers.');
+      return;
+    }
     if (confirmPin !== newPin) {
       setError('PIN entries do not match. Start over.');
       setNewPin('');
@@ -265,7 +279,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
     setError('');
     try {
       // 1. Commit PIN to express backend
-      const res = await fetch('/api/auth/set-pin', {
+      const res = await apiFetch('/api/auth/set-pin', {
         method: 'POST',
         headers,
         body: JSON.stringify({ phone_or_email: cleanContact, pin: confirmPin })
@@ -273,7 +287,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
       if (!res.ok) throw new Error('Failed to configure PIN.');
 
       // 2. Perform authenticating verification to log them in
-      const authRes = await fetch('/api/auth/pin-login', {
+      const authRes = await apiFetch('/api/auth/pin-login', {
         method: 'POST',
         headers,
         body: JSON.stringify({ phone_or_email: cleanContact, pin: confirmPin })
@@ -303,7 +317,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
         const cleanContact = normalizeContact(phoneOrEmail);
         setLoading(true);
         try {
-          const res = await fetch('/api/auth/pin-login', {
+          const res = await apiFetch('/api/auth/pin-login', {
             method: 'POST',
             headers,
             body: JSON.stringify({ phone_or_email: cleanContact, pin: nextAttempt })
@@ -658,6 +672,10 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
           <button 
             type="button"
             onClick={async () => {
+                if (!navigator.onLine) {
+                  setError('⚠️ Network Offline: An active internet connection is strictly required to complete account registration on our servers.');
+                  return;
+                }
                 const cleanContact = normalizeContact(phoneOrEmail);
                 if (!fullName.trim()) {
                   setError('Please fill in your full name.');
@@ -670,7 +688,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
                 setLoading(true);
                 setError('');
                 try {
-                  const res = await fetch('/api/auth/register-onboarding', {
+                  const res = await apiFetch('/api/auth/register-onboarding', {
                     method: 'POST',
                     headers: { ...headers, 'x-session-id': localStorage.getItem('session_id') || '' },
                     body: JSON.stringify({ 
@@ -689,7 +707,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
                   localStorage.setItem('authorized_phone_or_email', cleanContact);
                   
                   // Fetch auth session after registration
-                  const authRes = await fetch('/api/auth/pin-login', {
+                  const authRes = await apiFetch('/api/auth/pin-login', {
                     method: 'POST',
                     headers,
                     body: JSON.stringify({ phone_or_email: cleanContact, pin: confirmPin })

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/api';
 
 interface ActivityLog {
     id: string;
@@ -34,7 +35,7 @@ export default function StaffActivityLog({ onUnauthorized, isSuspiciousLocked, d
 
         const simFp = deviceFingerprint || localStorage.getItem('simulated_device_fp') || 'unknown';
         const simLoc = approxRegion || localStorage.getItem('simulated_location') || 'NG-Lagos';
-        fetch('/api/staff/log', {
+        apiFetch('/api/staff/log', {
             headers: {
                 'x-session-id': sesId,
                 'x-device-fingerprint': simFp,

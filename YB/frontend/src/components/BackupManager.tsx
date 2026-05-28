@@ -14,6 +14,7 @@ import {
   Search,
   HardDrive
 } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 interface BackupEntry {
   filename: string;
@@ -57,7 +58,7 @@ export default function BackupManager({
     if (!isAuthenticated) return;
     try {
       const token = localStorage.getItem('session_id') || '';
-      const response = await fetch('/api/backup/list', {
+      const response = await apiFetch('/api/backup/list', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'x-session-id': token
@@ -143,7 +144,7 @@ export default function BackupManager({
     try {
       if (backup.source === 'server') {
         const token = localStorage.getItem('session_id') || '';
-        const response = await fetch(`/api/backup/download/${backup.filename}`, {
+        const response = await apiFetch(`/api/backup/download/${backup.filename}`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'x-session-id': token
@@ -198,7 +199,7 @@ export default function BackupManager({
       let payload: any = null;
       if (backup.source === 'server') {
         const token = localStorage.getItem('session_id') || '';
-        const response = await fetch(`/api/backup/download/${backup.filename}`, {
+        const response = await apiFetch(`/api/backup/download/${backup.filename}`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'x-session-id': token
@@ -247,7 +248,7 @@ export default function BackupManager({
     try {
       if (backup.source === 'server') {
         const token = localStorage.getItem('session_id') || '';
-        const response = await fetch(`/api/backup/${backup.filename}`, {
+        const response = await apiFetch(`/api/backup/${backup.filename}`, {
           method: 'DELETE',
           headers: {
             'Authorization': `Bearer ${token}`,
