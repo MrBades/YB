@@ -1,0 +1,50 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    },
+    {
+      "src": "django_backend/yeedem_project/wsgi.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "15mb",
+        "runtime": "python3.9"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "django_backend/yeedem_project/wsgi.py"
+    },
+    {
+      "src": "/admin/(.*)",
+      "dest": "django_backend/yeedem_project/wsgi.py"
+    },
+    {
+      "src": "/static/admin/(.*)",
+      "dest": "django_backend/yeedem_project/wsgi.py"
+    },
+    {
+      "src": "/static/rest_framework/(.*)",
+      "dest": "django_backend/yeedem_project/wsgi.py"
+    },
+    {
+      "src": "/assets/(.*)",
+      "dest": "/assets/$1"
+    },
+    {
+      "src": "/vite.svg",
+      "dest": "/vite.svg"
+    },
+    {
+      "src": "/((?!api|admin|static/admin|static/rest_framework).*)",
+      "dest": "/index.html"
+    }
+  ]
+}

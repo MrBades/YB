@@ -1,0 +1,25 @@
+{
+  "backupVersion": 1,
+  "exportedAt": "2026-05-28T15:09:45.486Z",
+  "email": "+2347066144913",
+  "businessProfile": {
+    "businessName": "Yeedem Tech",
+    "phone": "+2347066144913",
+    "address": "",
+    "invoiceTemplatePreference": "modern_blue",
+    "businessLogo": "",
+    "customAccentColor": "#00A6FF",
+    "customFontSize": "md",
+    "customFontFamily": "sans",
+    "customShowLogo": true,
+    "customHeaderTitle": "TAX INVOICE",
+    "customFooterNotes": "This document acts as an official trade journal entry. Please verify balances online.",
+    "customShadowStyle": "md",
+    "businessType": "service"
+  },
+  "data": {
+    "customers": [],
+    "products": [],
+    "restockLogs": []
+  }
+}

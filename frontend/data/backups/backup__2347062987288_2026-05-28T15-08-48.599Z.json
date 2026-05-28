@@ -1,0 +1,25 @@
+{
+  "backupVersion": 1,
+  "exportedAt": "2026-05-28T15:08:48.586Z",
+  "email": "+2347062987288",
+  "businessProfile": {
+    "businessName": "Jeo Tech",
+    "phone": "+2347062987288",
+    "address": "",
+    "invoiceTemplatePreference": "classic",
+    "businessLogo": "",
+    "customAccentColor": "#00A6FF",
+    "customFontSize": "md",
+    "customFontFamily": "sans",
+    "customShowLogo": true,
+    "customHeaderTitle": "TAX INVOICE",
+    "customFooterNotes": "This document acts as an official trade journal entry. Please verify balances online.",
+    "customShadowStyle": "md",
+    "businessType": "buy_and_sell"
+  },
+  "data": {
+    "customers": [],
+    "products": [],
+    "restockLogs": []
+  }
+}
