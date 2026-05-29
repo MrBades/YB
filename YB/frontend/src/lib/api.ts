@@ -3,24 +3,15 @@
  * Allows developers to update base URLs in one place.
  */
 
-// EXPRESS_API_BASE_URL: Set to empty by default so it queries the current server hosting the React app
-// (where server.ts runs user authentication, OTPs, session validation, backups, and security checks)
-export const EXPRESS_API_BASE_URL = (import.meta.env.VITE_EXPRESS_API_URL as string) || '';
-
 // DJANGO_API_BASE_URL: Your Django backend hosted on Vercel
-export const DJANGO_API_BASE_URL = (import.meta.env.VITE_DJANGO_API_URL as string) || 'https://yb-alpha.vercel.app/';
+export const DJANGO_API_BASE_URL = (import.meta.env.VITE_DJANGO_API_URL as string) || 'https://yb-alpha.vercel.app';
 
-/**
- * Normalizes and resolves paths for Express Node.js Server
- */
-export function getApiUrl(path: string): string {
-  if (path.startsWith('http://') || path.startsWith('https://')) {
-    return path;
-  }
-  const base = EXPRESS_API_BASE_URL.replace(/\/+$/, '');
-  const cleanPath = path.replace(/^\/+/, '');
-  return base ? `${base}/${cleanPath}` : `/${cleanPath}`;
-}
+export const API_ENDPOINTS = {
+    TOKEN: `${DJANGO_API_BASE_URL}/api/token/`,
+    AUTH_PIN_LOGIN: `${DJANGO_API_BASE_URL}/api/auth/pin-login`,
+    AUTH_REGISTER: `${DJANGO_API_BASE_URL}/api/auth/register-onboarding`,
+    // ... add more as needed
+};
 
 /**
  * Normalizes and resolves paths for Django REST API Server
@@ -35,7 +26,7 @@ export function getDjangoApiUrl(path: string): string {
 }
 
 /**
- * Unified fetch wrapper that prepends the Django API URL or standard base to requests.
+ * Unified fetch wrapper that prepends the Django API URL to requests.
  * Directs all ledger operations, auth checks, backups, and staff flows directly to the Django REST server.
  */
 export async function apiFetch(path: string, options?: RequestInit): Promise<Response> {

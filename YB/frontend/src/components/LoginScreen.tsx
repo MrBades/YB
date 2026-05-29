@@ -58,6 +58,24 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
     }
   }, [storedPhone]);
 
+  // Keyboard support for PIN entry
+  useEffect(() => {
+    if (step !== 'pin_lock') return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (loading) return;
+
+      if (e.key >= '0' && e.key <= '9') {
+        handlePinLogin(e.key);
+      } else if (e.key === 'Backspace') {
+        setPinAttempt(prev => prev.slice(0, -1));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [step, loading, pinAttempt]);
+
   const headers = {
     'Content-Type': 'application/json',
     'x-device-fingerprint': deviceFingerprint || 'unknown_fp',
