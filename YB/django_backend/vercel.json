@@ -12,6 +12,7 @@
   ],
   "routes": [
     {
+      "src": "build_files.sh",
       "src": "/static/(.*)",
       "headers": { "cache-control": "public, max-age=31536000, immutable" },
       "dest": "/static/$1"
