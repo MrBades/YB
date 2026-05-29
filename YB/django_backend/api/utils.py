@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 def parse_multimodal_smart_input(text=None, image_file=None, audio_file=None):
     """
     Parses digital ledger transaction notes from multimodal input (text, image, audio)
-    using gemini-2.5-flash with a structured JSON response schema.
+    using gemini-1.5-flash with a structured JSON response schema.
     If the API fails (quota limits, network offline, invalid credentials) or errors,
     it gracefully falls back to a regex-based heuristic parser to ensure stability.
     """
@@ -94,7 +94,7 @@ def parse_multimodal_smart_input(text=None, image_file=None, audio_file=None):
             )
 
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-1.5-flash',
                 contents=contents_parts,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -116,6 +116,90 @@ def parse_multimodal_smart_input(text=None, image_file=None, audio_file=None):
             logger.error(f"Gemini processing failed: {str(e)}. Attempting regex fallback.")
 
     return run_local_fallback_parser(text)
+
+
+def parse_multimodal_smart_product(text=None):
+    """
+    Parses digital product notes from text
+    using gemini-1.5-flash with a structured JSON response schema.
+    """
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if api_key:
+        try:
+            client = genai.Client(api_key=api_key)
+            contents_parts = []
+            prompt = """
+            You are an expert product catalog AI for microlenders and retail SMEs in Nigeria.
+            Analyze the text description of an inventory product and return a structured product Catalog record.
+
+            You MUST return a JSON object mapping to the specified schema, containing:
+            1. 'name': Normalized clean product name.
+            2. 'sku': Short uppercase SKU code (e.g., OIL-5L).
+            3. 'stock': Initial quantity in stock (integer).
+            4. 'price': Unit price of the product (number).
+            """
+            contents_parts.append(prompt)
+            if text:
+                contents_parts.append(f"Product Input text: {text}")
+
+            schema = types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "name": types.Schema(type=types.Type.STRING),
+                    "sku": types.Schema(type=types.Type.STRING),
+                    "stock": types.Schema(type=types.Type.INTEGER),
+                    "price": types.Schema(type=types.Type.NUMBER),
+                },
+                required=["name", "sku", "stock", "price"]
+            )
+
+            response = client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=contents_parts,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=schema,
+                    temperature=0.1
+                )
+            )
+
+            if response.text:
+                return json.loads(response.text.strip())
+
+        except Exception as e:
+            logger.error(f"Gemini product processing failed: {str(e)}")
+
+    return run_local_fallback_product_parser(text)
+
+
+def run_local_fallback_product_parser(text):
+    product_data = {
+        "name": "General Commodity",
+        "sku": "SKU-" + str(uuid.uuid4().hex[:6]).upper() if 'uuid' in globals() else "SKU-PROD",
+        "stock": 10,
+        "price": 0.0
+    }
+    if not text:
+        return product_data
+    try:
+        raw_text = text.strip()
+        # Price matching
+        price_match = re.search(r'(?:at|for|price|₦|N)\s*([\d,]+(?:\.\d+)?)', raw_text, re.IGNORECASE)
+        if price_match:
+            product_data["price"] = float(price_match.group(1).replace(',', ''))
+
+        # Stock units matching
+        stock_match = re.search(r'(\d+)\s*(?:units|pcs|pieces|bags|items|qty|quantity|stock)', raw_text, re.IGNORECASE)
+        if stock_match:
+            product_data["stock"] = int(stock_match.group(1))
+
+        # Name matching (very basic)
+        name_match = re.search(r'(?:add|create|new|item|product)\s+([\w\s&]+?)(?:\s+(?:with|at|for|under|price|sku|\d+))', raw_text, re.IGNORECASE)
+        if name_match:
+            product_data["name"] = name_match.group(1).strip()
+    except:
+        pass
+    return product_data
 
 
 def parse_amount(value_str, multiplier_str):

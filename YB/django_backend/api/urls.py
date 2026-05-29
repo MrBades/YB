@@ -9,6 +9,7 @@ from .views import (
     SetPinView, PinLoginView, ResetForgottenPinView,
     ValidateSessionView, VerifySuspiciousOtpView, LogoutView,
     UnlockAllView, BusinessSettingsView, BackupSaveView,
+    SmartProductProcessorAPIView,
     BackupListView, BackupDownloadView, BackupDeleteView,
     GuestInvoiceGenerateView, TerminalPinVerifyView,
     StaffListView, StaffLogView, SystemMigrateView
@@ -29,6 +30,8 @@ urlpatterns = [
     # Smart inputs & analytics
     path('smart-input', SmartInputProcessorAPIView.as_view(), name='smart-input'),
     path('smart-input/', SmartInputProcessorAPIView.as_view(), name='smart-input-slash'),
+    path('smart-product', SmartProductProcessorAPIView.as_view(), name='smart-product'),
+    path('smart-product/', SmartProductProcessorAPIView.as_view()),
     path('dashboard-metrics/', DashboardMetricsAPIView.as_view(), name='dashboard-metrics'),
     path('dashboard-metrics', DashboardMetricsAPIView.as_view(), name='dashboard-metrics-no-slash'),
     

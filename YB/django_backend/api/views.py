@@ -20,7 +20,7 @@ from .serializers import (
     ProductSerializer, InvoiceSerializer, SupplierRecordSerializer, 
     InventoryIntakeLogSerializer, LowStockNotificationSerializer
 )
-from .utils import parse_multimodal_smart_input
+from .utils import parse_multimodal_smart_input, parse_multimodal_smart_product
 
 
 class BusinessProfileViewSet(viewsets.ModelViewSet):
@@ -133,9 +133,13 @@ class SmartInputProcessorAPIView(APIView):
     runs the AI (or Regex fallback), creates the customer and invoice records implicitly,
     and returns parsed, structured data.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
+        user, err = get_session_user(request)
+        if err:
+            return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
+
         text_prompt = request.data.get("text", "").strip()
         image_file = request.FILES.get("image")
         audio_file = request.FILES.get("audio")
@@ -154,7 +158,7 @@ class SmartInputProcessorAPIView(APIView):
             )
 
             # Retrieve business model
-            profile = get_object_or_404(BusinessProfile, user=request.user)
+            profile = get_object_or_404(BusinessProfile, user=user)
 
             # Auto create/match the customer
             customer_name = parsed_data.get("customer_name") or "Walk-in Customer"
@@ -188,14 +192,56 @@ class SmartInputProcessorAPIView(APIView):
             }, status=status.HTTP_200_OK)
 
 
+class SmartProductProcessorAPIView(APIView):
+    """
+    Smart Product Extraction Endpoint.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        user, err = get_session_user(request)
+        if err:
+            return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
+
+        text_prompt = request.data.get("text", "").strip()
+
+        if not text_prompt:
+            return Response(
+                {"error": "Please provide a product description text."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            parsed_data = parse_multimodal_smart_product(text=text_prompt)
+            return Response({
+                "status": "success",
+                "parsed_data": parsed_data
+            })
+        except Exception as e:
+            return Response({
+                "status": "fallback_error",
+                "error": str(e),
+                "parsed_data": {
+                    "name": "General Commodity",
+                    "sku": "SKU-PROD",
+                    "stock": 10,
+                    "price": 0.0
+                }
+            }, status=status.HTTP_200_OK)
+
+
 class DashboardMetricsAPIView(APIView):
     """
     Provides real-time aggregated metrics for the SME Ledger dashboard view.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self, request, *args, **kwargs):
-        profile = get_object_or_404(BusinessProfile, user=request.user)
+        user, err = get_session_user(request)
+        if err:
+            return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
+
+        profile = get_object_or_404(BusinessProfile, user=user)
 
         # 1. Total outstanding loans
         outstanding_loan_aggregate = Customer.objects.filter(
