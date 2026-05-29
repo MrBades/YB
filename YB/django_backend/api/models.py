@@ -12,6 +12,12 @@ class BusinessProfile(models.Model):
     address = models.TextField(blank=True, null=True)
     invoice_template_preference = models.CharField(max_length=50, default='classic')
     
+    # Missing fields for unified backend auth parity
+    owner_pin = models.CharField(max_length=10, blank=True, null=True)
+    shop_slug = models.CharField(max_length=255, blank=True, null=True)
+    full_name = models.CharField(max_length=255, blank=True, null=True)
+    is_suspicious_locked = models.BooleanField(default=False)
+    
     # Custom display settings
     business_logo = models.TextField(blank=True, null=True, help_text="Base64 representation or logo image URL")
     custom_accent_color = models.CharField(max_length=50, default="#00A6FF")
@@ -181,3 +187,60 @@ class InventoryIntakeLog(models.Model):
             self.product.stock += self.amount
             self.product.save()
             self.product.check_low_stock()
+
+
+class MerchantSession(models.Model):
+    session_id = models.CharField(max_length=100, primary_key=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='merchant_sessions')
+    device_fingerprint = models.CharField(max_length=255, default='unknown_fp')
+    last_active_ip = models.CharField(max_length=100, default='127.0.0.1')
+    last_active_region = models.CharField(max_length=100, default='NG-Lagos')
+    is_suspicious_locked = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Session {self.session_id} for user {self.user.username}"
+
+
+class LedgerBackup(models.Model):
+    id = models.CharField(max_length=100, primary_key=True, default=lambda: f"bkp_{uuid.uuid4().hex[:12]}")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='ledgers_backups')
+    filename = models.CharField(max_length=255)
+    backup_data = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.filename
+
+
+class Staff(models.Model):
+    id = models.CharField(max_length=100, primary_key=True, default=lambda: f"staff_{uuid.uuid4().hex[:12]}")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='staff_members')
+    name_slug = models.CharField(max_length=100)
+    real_name = models.CharField(max_length=255)
+    owner_generated_pin = models.CharField(max_length=10)
+    is_active = models.BooleanField(default=True)
+    shop_id = models.CharField(max_length=100, default='default_shop')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.real_name} (Slug: {self.name_slug})"
+
+
+class StaffActivityLog(models.Model):
+    id = models.CharField(max_length=100, primary_key=True, default=lambda: f"log_{uuid.uuid4().hex[:12]}")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='staff_logs')
+    staff = models.ForeignKey(Staff, on_delete=models.CASCADE, blank=True, null=True, related_name='logs')
+    action_taken = models.CharField(max_length=255)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    is_flagged = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"Log {self.id} for action {self.action_taken}"
+
