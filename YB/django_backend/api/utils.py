@@ -25,18 +25,27 @@ def parse_multimodal_smart_input(text=None, image_file=None, audio_file=None):
             
             # Base prompt guiding the response structure
             prompt = """
-            You are an expert SME accounting AI assistant. Analyze the input transaction 
-            (could be a text ledger entry, a voice log transcript, or a visual invoice/receipt image) 
-            and extract transaction parameters.
+            You are an expert SME accounting AI assistant for Nigerian retail businesses.
+            Analyze the input (text, voice transcript, or image) and extract transaction parameters.
             
-            You MUST return a JSON object mapping to the specified schema, containing:
-            1. 'product_name': A flat single string of the main product or aggregated products (e.g. 'Garri' or 'Garri, Sugar').
-            2. 'items': A list of objects, each with 'name', 'quantity' (integer), 'price' (decimal/float), and 'total' (decimal/float).
-            3. 'customer_name': The name of the buyer/customer. If not mentioned, use 'Walk-in Customer'.
-            4. 'total_amount': The grand sum of the transaction.
-            5. 'amount_paid': The deposit or immediate amount paid by the customer. Defaults to 0 if not stated.
-            6. 'debt_balance': The remaining unpaid balance (total_amount - amount_paid).
-            7. 'transaction_type': Either 'sale' or 'expense' or 'payment_on_account'.
+            EXTRACTING NUMBERS (NIGERIAN CONTEXT):
+            - Shorthand like '45k' MUST be interpreted as 45,000. '1m' is 1,000,000.
+            - If a price is given as '45k each' for 3 bags, the 'price' is 45000 and 'total' is 135000.
+
+            REQUIRED SCHEMA FIELDS:
+            1. 'product_name': A concise summary string of items (e.g., 'Garri' or 'Garri, Rice').
+            2. 'items': List of objects. Each MUST have:
+               - 'name': Specific item name.
+               - 'quantity': Integer count.
+               - 'price': Unit price (number).
+               - 'total': quantity * price (number).
+            3. 'customer_name': The buyer's name. Use 'Walk-in Customer' if unspecified.
+            4. 'total_amount': Grand total of all items.
+            5. 'amount_paid': Cash/deposit received. Default to 0.
+            6. 'debt_balance': total_amount - amount_paid.
+            7. 'transaction_type': 'sale', 'expense', or 'payment_on_account'.
+
+            Ensure all mathematical relationships hold (e.g., quantity * price = total).
             """
             contents_parts.append(prompt)
             
@@ -71,26 +80,27 @@ def parse_multimodal_smart_input(text=None, image_file=None, audio_file=None):
             schema = types.Schema(
                 type=types.Type.OBJECT,
                 properties={
-                    "product_name": types.Schema(type=types.Type.STRING, description="Flat key of main product name(s)"),
-                    "customer_name": types.Schema(type=types.Type.STRING, description="Name of buying customer or 'Walk-in Customer'"),
+                    "product_name": types.Schema(type=types.Type.STRING, description="Summary of items sold"),
+                    "customer_name": types.Schema(type=types.Type.STRING, description="Buyer name or 'Walk-in Customer'"),
                     "items": types.Schema(
                         type=types.Type.ARRAY,
                         items=types.Schema(
                             type=types.Type.OBJECT,
                             properties={
-                                "name": types.Schema(type=types.Type.STRING),
-                                "quantity": types.Schema(type=types.Type.INTEGER),
-                                "price": types.Schema(type=types.Type.NUMBER),
-                                "total": types.Schema(type=types.Type.NUMBER),
+                                "name": types.Schema(type=types.Type.STRING, description="Item name"),
+                                "quantity": types.Schema(type=types.Type.INTEGER, description="Units count"),
+                                "price": types.Schema(type=types.Type.NUMBER, description="Price per unit"),
+                                "total": types.Schema(type=types.Type.NUMBER, description="quantity * price"),
                             },
+                            required=["name", "quantity", "price", "total"]
                         ),
                     ),
-                    "total_amount": types.Schema(type=types.Type.NUMBER),
-                    "amount_paid": types.Schema(type=types.Type.NUMBER),
-                    "debt_balance": types.Schema(type=types.Type.NUMBER),
-                    "transaction_type": types.Schema(type=types.Type.STRING),
+                    "total_amount": types.Schema(type=types.Type.NUMBER, description="Sum of all item totals"),
+                    "amount_paid": types.Schema(type=types.Type.NUMBER, description="Amount paid by customer"),
+                    "debt_balance": types.Schema(type=types.Type.NUMBER, description="total_amount - amount_paid"),
+                    "transaction_type": types.Schema(type=types.Type.STRING, description="'sale', 'expense', or 'payment_on_account'"),
                 },
-                required=["product_name", "customer_name", "items", "total_amount", "amount_paid", "debt_balance"]
+                required=["product_name", "customer_name", "items", "total_amount", "amount_paid", "debt_balance", "transaction_type"]
             )
 
             response = client.models.generate_content(

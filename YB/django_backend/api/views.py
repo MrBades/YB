@@ -136,9 +136,12 @@ class SmartInputProcessorAPIView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
-        user, err = get_session_user(request)
-        if err:
-            return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
+        session_id = request.headers.get('x-session-id')
+        user = None
+        if session_id:
+            user, err = get_session_user(request)
+            if err:
+                return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
 
         text_prompt = request.data.get("text", "").strip()
         image_file = request.FILES.get("image")
@@ -157,25 +160,28 @@ class SmartInputProcessorAPIView(APIView):
                 audio_file=audio_file
             )
 
-            # Retrieve business model
-            profile = get_object_or_404(BusinessProfile, user=user)
-
-            # Auto create/match the customer
-            customer_name = parsed_data.get("customer_name") or "Walk-in Customer"
-            customer, created = Customer.objects.get_or_create(
-                business=profile,
-                name=customer_name
-            )
-
-            return Response({
+            response_payload = {
                 "status": "success",
-                "parsed_data": parsed_data,
-                "matched_customer": {
+                "parsed_data": parsed_data
+            }
+
+            if user:
+                # Retrieve business model
+                profile = get_object_or_404(BusinessProfile, user=user)
+
+                # Auto create/match the customer
+                customer_name = parsed_data.get("customer_name") or "Walk-in Customer"
+                customer, created = Customer.objects.get_or_create(
+                    business=profile,
+                    name=customer_name
+                )
+                response_payload["matched_customer"] = {
                     "id": customer.id,
                     "name": customer.name,
                     "active_debt": float(customer.active_debt_balance)
                 }
-            })
+
+            return Response(response_payload)
         except Exception as e:
             return Response({
                 "status": "fallback_error",
@@ -199,9 +205,12 @@ class SmartProductProcessorAPIView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
-        user, err = get_session_user(request)
-        if err:
-            return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
+        session_id = request.headers.get('x-session-id')
+        user = None
+        if session_id:
+            user, err = get_session_user(request)
+            if err:
+                return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
 
         text_prompt = request.data.get("text", "").strip()
 
