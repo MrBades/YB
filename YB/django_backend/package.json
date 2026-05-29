@@ -1,0 +1,7 @@
+{
+  "name": "yeedem-backend",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "bash build_files.sh"
+  }
+}

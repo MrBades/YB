@@ -7,6 +7,8 @@ from django.db.models import Sum, F, Q, ExpressionWrapper, DecimalField
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
+from django.core.management import call_command
+import io
 
 from .models import (
     BusinessProfile, Customer, Product, LowStockNotification,
@@ -928,3 +930,18 @@ class StaffLogView(APIView):
         )
         return Response({"status": "success"})
 
+
+class SystemMigrateView(APIView):
+    """
+    Emergency endpoint to trigger database migrations.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        output = io.StringIO()
+        try:
+            call_command('migrate', no_input=True, stdout=output)
+            result = output.getvalue()
+            return Response({"status": "success", "output": result})
+        except Exception as e:
+            return Response({"status": "error", "message": str(e)}, status=500)

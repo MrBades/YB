@@ -11,7 +11,7 @@ from .views import (
     UnlockAllView, BusinessSettingsView, BackupSaveView,
     BackupListView, BackupDownloadView, BackupDeleteView,
     GuestInvoiceGenerateView, TerminalPinVerifyView,
-    StaffListView, StaffLogView
+    StaffListView, StaffLogView, SystemMigrateView
 )
 
 router = DefaultRouter()
@@ -78,4 +78,5 @@ urlpatterns = [
     path('staff/', StaffListView.as_view()),
     path('staff/log', StaffLogView.as_view(), name='staff-log'),
     path('staff/log/', StaffLogView.as_view()),
+    path('system/migrate', SystemMigrateView.as_view(), name='system-migrate'),
 ]
