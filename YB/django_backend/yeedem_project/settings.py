@@ -1,7 +1,9 @@
 import os
+import sys
 import dj_database_url
 import environ
 from pathlib import Path
+from corsheaders.defaults import default_headers
 from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -139,6 +141,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS configuration for simple integration
 CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'x-device-fingerprint',
+    'x-approx-region',
+    'x-session-id',
+]
 
 # Django REST Framework Settings
 REST_FRAMEWORK = {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { formatNaira } from '../utils/currency';
+import { apiFetch } from '../lib/api';
 import { 
   Shield, 
   Settings, 
@@ -155,7 +156,7 @@ export default function DjangoAdminController({
   const handleUnlockAllServerSessions = async () => {
     setIsSyncing(true);
     try {
-      const res = await fetch('/api/admin/unlock-all');
+      const res = await apiFetch('/api/admin/unlock-all');
       if (res.ok) {
         const payload = await res.json();
         addAuditLog('SUCCESS', 'SERVER_UNLOCK', 'Command accepted. Remotely bypassed and unlocked all suspicious login states.');

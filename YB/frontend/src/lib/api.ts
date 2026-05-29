@@ -4,7 +4,7 @@
  */
 
 // DJANGO_API_BASE_URL: Your Django backend hosted on Vercel
-export const DJANGO_API_BASE_URL = (import.meta.env.VITE_DJANGO_API_URL as string) || 'https://yb-alpha.vercel.app';
+export const DJANGO_API_BASE_URL = (import.meta.env.VITE_DJANGO_API_URL as string) || (import.meta.env.VITE_API_URL as string) || 'https://yb-alpha.vercel.app';
 
 export const API_ENDPOINTS = {
     TOKEN: `${DJANGO_API_BASE_URL}/api/token/`,
