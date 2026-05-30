@@ -1,6 +1,7 @@
 import re
 import os
 import json
+import uuid
 import logging
 from google import genai
 from google.genai import types
@@ -120,12 +121,12 @@ def parse_multimodal_smart_input(text=None, image_file=None, audio_file=None):
                         parsed_data['product_name'] = ", ".join([itm.get('name', 'Item') for itm in parsed_data['items']])
                     else:
                         parsed_data['product_name'] = "General Goods"
-                return parsed_data
+                return parsed_data, "success"
 
         except Exception as e:
             logger.error(f"Gemini processing failed: {str(e)}. Attempting regex fallback.")
 
-    return run_local_fallback_parser(text)
+    return run_local_fallback_parser(text), "fallback_error"
 
 
 def parse_multimodal_smart_product(text=None):
@@ -174,18 +175,18 @@ def parse_multimodal_smart_product(text=None):
             )
 
             if response.text:
-                return json.loads(response.text.strip())
+                return json.loads(response.text.strip()), "success"
 
         except Exception as e:
             logger.error(f"Gemini product processing failed: {str(e)}")
 
-    return run_local_fallback_product_parser(text)
+    return run_local_fallback_product_parser(text), "fallback_error"
 
 
 def run_local_fallback_product_parser(text):
     product_data = {
         "name": "General Commodity",
-        "sku": "SKU-" + str(uuid.uuid4().hex[:6]).upper() if 'uuid' in globals() else "SKU-PROD",
+        "sku": "SKU-" + str(uuid.uuid4().hex[:6]).upper(),
         "stock": 10,
         "price": 0.0
     }
@@ -194,9 +195,10 @@ def run_local_fallback_product_parser(text):
     try:
         raw_text = text.strip()
         # Price matching
-        price_match = re.search(r'(?:at|for|price|₦|N)\s*([\d,]+(?:\.\d+)?)', raw_text, re.IGNORECASE)
+        # Improved regex to handle common formats and ignore 'b' as billion
+        price_match = re.search(r'(?:at|for|price|₦|N)\s*([\d,]+(?:\.\d+)?)\s*(k|thousand|m|million|bn|billion)?', raw_text, re.IGNORECASE)
         if price_match:
-            product_data["price"] = float(price_match.group(1).replace(',', ''))
+            product_data["price"] = parse_amount(price_match.group(1), price_match.group(2))
 
         # Stock units matching
         stock_match = re.search(r'(\d+)\s*(?:units|pcs|pieces|bags|items|qty|quantity|stock)', raw_text, re.IGNORECASE)
@@ -226,7 +228,7 @@ def parse_amount(value_str, multiplier_str):
             value *= 1000
         elif m in ['m', 'million']:
             value *= 1000000
-        elif m in ['b', 'billion']:
+        elif m in ['bn', 'billion']: # Changed from 'b' to 'bn' to avoid conflicts with 'bags/bottles'
             value *= 1000000000
             
     return value
@@ -247,17 +249,31 @@ def run_local_fallback_parser(text):
 
     try:
         raw_text = text.strip()
-        customer_match = re.search(r'(?:to|for|buyer)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|[a-zA-Z]+)', raw_text, re.IGNORECASE)
-        if customer_match:
-            invoice_data["customer_name"] = customer_match.group(1).strip()
-
-        AMOUNT_REGEX = r'([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million|b|billion)?'
-        paid_match = re.search(r'(?:paid|deposit|payment.*?of|paid.*?deposit)\s*(?:N|₦)?\s*' + AMOUNT_REGEX, raw_text, re.IGNORECASE)
         
+        # Improved Regex to avoid matching 'b' as 'billion' when it's from 'bags' or 'bottles'
+        AMOUNT_REGEX = r'([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million|bn|billion)?(?!\w)'
+
+        # 1. Extraction of amount paid
+        # Check for deposit/paid first to get the 100k
+        paid_match = re.search(r'(?:paid|deposit|payment.*?of|got|received|deposited)\s*(?:N|₦)?\s*' + AMOUNT_REGEX, raw_text, re.IGNORECASE)
         if paid_match:
             invoice_data["amount_paid"] = parse_amount(paid_match.group(1), paid_match.group(2))
 
-        item_match = re.search(r'(\d+)?\s*(?:bags|units|pieces|kg)?\s*of?\s*([\w\s]+?)\s*(?:for|at|each)?\s*(?:N|₦)?\s*' + AMOUNT_REGEX, raw_text, re.IGNORECASE)
+        # 2. Extraction of customer name - look for 'to [Name]' but avoid 'to [Place]' or keywords
+        # Looking for Emeka in "to Emeka"
+        customer_match = re.search(r'(?:to|for|buyer|client)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)', raw_text)
+        if not customer_match:
+             customer_match = re.search(r'(?:to|for|buyer|client)\s+([a-zA-Z]+)', raw_text, re.IGNORECASE)
+
+        if customer_match:
+            name = customer_match.group(1).strip()
+            if name.lower() not in ['each', 'cash', 'bags', 'items', 'me', 'my', 'the', 'record', 'garri']:
+                invoice_data["customer_name"] = name
+
+        # 3. Extraction of items
+        # Matches: "3 bags of Garri", "Sold 2 Garri", "5 Milo"
+        # Adjusted to capture the product name better and skip quantity/unit
+        item_match = re.search(r'(?:sold|bought|sale of)\s+(?:(\d+)\s*(?:bags|units|pieces|kg|bottles|cartons|boxes|pkts)?\s*of?\s*)?([\w\s]+?)(?=\s+(?:to|for|at|each|₦|N|by|$))', raw_text, re.IGNORECASE)
         
         qty = 1
         price_per_unit = 0.0
@@ -266,8 +282,12 @@ def run_local_fallback_parser(text):
         if item_match:
             qty = int(item_match.group(1)) if item_match.group(1) else 1
             prod_name = item_match.group(2).strip()
-            prod_name = re.sub(r'\b(bags|items|pieces|cartons|of|kg)\b', '', prod_name, flags=re.IGNORECASE).strip()
-            price_per_unit = parse_amount(item_match.group(3), item_match.group(4))
+
+            # 4. Extraction of price
+            # Find price specifically associated with this item or following it
+            price_search = re.search(r'(?:for|at|@|each|₦|N)\s*' + AMOUNT_REGEX, raw_text, re.IGNORECASE)
+            if price_search:
+                price_per_unit = parse_amount(price_search.group(1), price_search.group(2))
         else:
             lump_sum_match = re.search(r'(?:for|amounting to|total|worth)\s*(?:N|₦)?\s*' + AMOUNT_REGEX, raw_text, re.IGNORECASE)
             if lump_sum_match:

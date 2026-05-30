@@ -138,7 +138,7 @@ class SmartInputProcessorAPIView(APIView):
     def post(self, request, *args, **kwargs):
         session_id = request.headers.get('x-session-id')
         user = None
-        if session_id:
+        if session_id and session_id not in ["null", "undefined", ""]:
             user, err = get_session_user(request)
             if err:
                 return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
@@ -154,14 +154,14 @@ class SmartInputProcessorAPIView(APIView):
             )
 
         try:
-            parsed_data = parse_multimodal_smart_input(
+            parsed_data, extraction_status = parse_multimodal_smart_input(
                 text=text_prompt,
                 image_file=image_file,
                 audio_file=audio_file
             )
 
             response_payload = {
-                "status": "success",
+                "status": extraction_status,
                 "parsed_data": parsed_data
             }
 
@@ -207,7 +207,7 @@ class SmartProductProcessorAPIView(APIView):
     def post(self, request, *args, **kwargs):
         session_id = request.headers.get('x-session-id')
         user = None
-        if session_id:
+        if session_id and session_id not in ["null", "undefined", ""]:
             user, err = get_session_user(request)
             if err:
                 return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
@@ -221,9 +221,9 @@ class SmartProductProcessorAPIView(APIView):
             )
 
         try:
-            parsed_data = parse_multimodal_smart_product(text=text_prompt)
+            parsed_data, extraction_status = parse_multimodal_smart_product(text=text_prompt)
             return Response({
-                "status": "success",
+                "status": extraction_status,
                 "parsed_data": parsed_data
             })
         except Exception as e:
