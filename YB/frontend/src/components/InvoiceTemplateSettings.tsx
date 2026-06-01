@@ -1,6 +1,22 @@
 import { useState, useEffect, useRef, FormEvent, ChangeEvent } from 'react';
 import { BusinessProfile, Invoice, TextSectionStyles } from '../types';
-import { Palette, Upload, Award, ShieldAlert, CheckCircle2, Sliders, Eye, FileText, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { 
+  Palette, 
+  Upload, 
+  Award, 
+  ShieldAlert, 
+  CheckCircle2, 
+  Sliders, 
+  Eye, 
+  FileText, 
+  Check, 
+  ChevronDown, 
+  ChevronUp, 
+  ChevronLeft, 
+  ChevronRight, 
+  Sparkles 
+} from 'lucide-react';
+import BrandingPreviewModal from './BrandingPreviewModal';
 
 interface InvoiceTemplateSettingsProps {
   business: BusinessProfile;
@@ -46,6 +62,7 @@ export default function InvoiceTemplateSettings({ business, onSaveSettings, dark
   const [headerTitle, setHeaderTitle] = useState(business.customHeaderTitle || 'TAX INVOICE');
   const [footerNotes, setFooterNotes] = useState(business.customFooterNotes || 'Thank you for your business!');
   const [shadowStyle, setShadowStyle] = useState<'none' | 'sm' | 'md' | 'lg' | 'xl'>(business.customShadowStyle || 'md');
+  const [isBrandingModalOpen, setIsBrandingModalOpen] = useState(false);
 
   // Section-by-section stylistic attributes state
   const [headerStyle, setHeaderStyle] = useState<TextSectionStyles>(business.headerStyles || {
@@ -121,6 +138,26 @@ export default function InvoiceTemplateSettings({ business, onSaveSettings, dark
   const [activeAccordion, setActiveAccordion] = useState<string | null>('headerStyles');
   const [isSaved, setIsSaved] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const PRESET_LAYOUTS = [
+    { id: 'classic', label: 'Monochrome Classic', desc: 'Traditional structured retail ledger layout for general trading.', icon: '📜', badge: 'Classic', color: 'bg-gray-100 text-gray-800 border-gray-200' },
+    { id: 'modern_blue', label: 'Ocean Sapphire Blue', desc: 'Corporate blueprint styled with sapphire color borders, grids and clean headings.', icon: '💎', badge: 'Sapphire', color: 'bg-blue-50 text-blue-700 border-blue-200' },
+    { id: 'kiosk_compact', label: 'Compact Kiosk Ticket', desc: 'Simulated 58mm thermal ticket receipt roll, optimal for quick sales.', icon: '🎫', badge: 'Kiosk', color: 'bg-amber-50 text-amber-950 border-amber-200' },
+    { id: 'custom_build', label: 'Custom Designer Canvas', desc: 'Advanced sandbox styling allowing custom typography, colors, and shadows.', icon: '🎨', badge: 'Sandbox', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' }
+  ];
+
+  const currentIdx = PRESET_LAYOUTS.findIndex(p => p.id === template);
+  const activePresetIdx = currentIdx >= 0 ? currentIdx : 0;
+
+  const navigatePreset = (direction: 'prev' | 'next') => {
+    let nextIdx = activePresetIdx;
+    if (direction === 'prev') {
+      nextIdx = (activePresetIdx - 1 + PRESET_LAYOUTS.length) % PRESET_LAYOUTS.length;
+    } else {
+      nextIdx = (activePresetIdx + 1) % PRESET_LAYOUTS.length;
+    }
+    handleFieldChange('template', PRESET_LAYOUTS[nextIdx].id);
+  };
 
   // Helper to instantly persist and mirror settings up to global State
   const handleFieldChange = (field: string, val: any) => {
@@ -745,48 +782,95 @@ export default function InvoiceTemplateSettings({ business, onSaveSettings, dark
                 )}
               </div>
 
-              {/* Template Style Selectors */}
-              <div className="space-y-2">
-                <span className="block font-bold text-gray-400 uppercase tracking-wider text-[9px]">Select Layout Presets</span>
-                <div className="grid grid-cols-2 gap-2 text-[10px]">
-                  
-                  <button
-                    type="button"
-                    onClick={() => handleFieldChange('template', 'classic')}
-                    className={`p-3 rounded-xl border text-left transition ${template === 'classic' ? 'border-[#00A6FF] bg-[#00A6FF]/5 text-[#00A6FF]' : 'border-gray-100 hover:bg-gray-50'}`}
-                  >
-                    <span className="font-bold block text-xs">Monochrome Classic</span>
-                    <span className="text-[9px] block text-gray-400 mt-0.5">Traditional ledger structure</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleFieldChange('template', 'modern_blue')}
-                    className={`p-3 rounded-xl border text-left transition ${template === 'modern_blue' ? 'border-blue-500 bg-blue-50/20 text-blue-700' : 'border-gray-100 hover:bg-gray-50'}`}
-                  >
-                    <span className="font-bold block text-xs">Ocean Sapphire Blue</span>
-                    <span className="text-[9px] block text-gray-400 mt-0.5">Corporate blue theme borders</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleFieldChange('template', 'kiosk_compact')}
-                    className={`p-3 rounded-xl border text-left transition ${template === 'kiosk_compact' ? 'border-amber-600 bg-amber-50/15 text-amber-700' : 'border-gray-100 hover:bg-gray-50'}`}
-                  >
-                    <span className="font-bold block text-xs">Compact Kiosk ticket</span>
-                    <span className="text-[9px] block text-gray-400 mt-0.5">Simulated receipt roll tick</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleFieldChange('template', 'custom_build')}
-                    className={`p-3 rounded-xl border text-left transition-all ${template === 'custom_build' ? 'border-amber-500 bg-amber-50/25 text-amber-900 shadow-sm' : 'border-gray-100 hover:bg-gray-50'}`}
-                  >
-                    <span className="font-bold block text-xs flex items-center gap-1">✨ Custom Designer</span>
-                    <span className="text-[9px] block text-gray-400 mt-0.5">Direct sandbox styling block</span>
-                  </button>
-
+              {/* Layout Presets Visual Carousel & Interactive Dropdown */}
+              <div className="space-y-3 p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                <div className="flex items-center justify-between">
+                  <label className="block font-bold text-gray-700 uppercase tracking-widest text-[9px]">
+                    Invoice Layout Preset Selector
+                  </label>
+                  <span className="text-[9px] text-gray-400 font-bold bg-white px-1.5 py-0.5 border border-slate-100 rounded">
+                    Active Theme: {template || 'classic'}
+                  </span>
                 </div>
+
+                {/* Dropdown Selector */}
+                <div className="relative">
+                  <select
+                    value={template}
+                    onChange={(e) => handleFieldChange('template', e.target.value)}
+                    className="w-full text-xs font-bold rounded-xl border border-gray-200 outline-none p-3 bg-white text-gray-800 focus:border-[#00A6FF] shadow-xs cursor-pointer appearance-none"
+                  >
+                    {PRESET_LAYOUTS.map(preset => (
+                      <option key={preset.id} value={preset.id} className="font-semibold text-gray-850">
+                        {preset.icon} &nbsp; {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3.5 top-3.5 pointer-events-none text-gray-400">
+                    <ChevronDown className="w-4 h-4" />
+                  </div>
+                </div>
+
+                {/* VISUAL CAROUSEL INTERFACE */}
+                <div className="relative mt-2 bg-white rounded-xl border border-slate-150 p-4 shadow-sm select-none">
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => navigatePreset('prev')}
+                      className="p-1.5 hover:bg-slate-55 rounded-lg text-gray-400 hover:text-[#0E1338] transition border border-transparent hover:border-slate-150 cursor-pointer"
+                      title="Previous template preset"
+                    >
+                      <ChevronLeft className="w-4.5 h-4.5" />
+                    </button>
+
+                    <div className="flex-1 text-center py-1">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span className="text-xl">{PRESET_LAYOUTS[activePresetIdx].icon}</span>
+                        <div className="text-left">
+                          <span className="font-bold text-xs block text-[#0E1338] leading-tight">
+                            {PRESET_LAYOUTS[activePresetIdx].label}
+                          </span>
+                          <span className={`inline-block text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded-md mt-0.5 border ${PRESET_LAYOUTS[activePresetIdx].color}`}>
+                            {PRESET_LAYOUTS[activePresetIdx].badge} theme active
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-2 max-w-xs mx-auto leading-relaxed">
+                        {PRESET_LAYOUTS[activePresetIdx].desc}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => navigatePreset('next')}
+                      className="p-1.5 hover:bg-slate-55 rounded-lg text-gray-400 hover:text-[#0E1338] transition border border-transparent hover:border-slate-150 cursor-pointer"
+                      title="Next template preset"
+                    >
+                      <ChevronRight className="w-4.5 h-4.5" />
+                    </button>
+                  </div>
+
+                  {/* Positioning Indicators (Dots Grid) */}
+                  <div className="flex justify-center gap-1.5 mt-2.5">
+                    {PRESET_LAYOUTS.map((p, idx) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handleFieldChange('template', p.id)}
+                        className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${idx === activePresetIdx ? 'bg-[#00A6FF] w-4' : 'bg-slate-200 hover:bg-slate-350'}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Direct High Fidelity Sandbox PDF Preview modal Launcher */}
+                <button
+                  type="button"
+                  onClick={() => setIsBrandingModalOpen(true)}
+                  className="w-full py-2 bg-amber-500/10 hover:bg-amber-500/15 text-amber-850 hover:text-amber-950 rounded-xl text-[10px] font-bold tracking-wide uppercase transition border border-amber-500/15 flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" /> Verify Sandbox PDF Document Output
+                </button>
               </div>
 
               {/* Advanced parameter workspace options for custom creator preference */}
@@ -1291,6 +1375,34 @@ export default function InvoiceTemplateSettings({ business, onSaveSettings, dark
         </div>
 
       </div>
+
+      {isBrandingModalOpen && (
+        <BrandingPreviewModal
+          isOpen={isBrandingModalOpen}
+          onClose={() => setIsBrandingModalOpen(false)}
+          invoice={dummyInvoiceSample}
+          business={{
+            ...business,
+            businessName,
+            address,
+            phone,
+            businessType,
+            invoiceTemplatePreference: template as any,
+            businessLogo: logoBase64,
+            customAccentColor: accentColor,
+            customFontSize: fontSize,
+            customFontFamily: fontFamily,
+            customShowLogo: showLogo,
+            customHeaderTitle: headerTitle,
+            customFooterNotes: footerNotes,
+            customShadowStyle: shadowStyle,
+            headerStyles: headerStyle,
+            customerStyles: customerStyle,
+            tableStyles: tableStyle,
+            footerStyles: footerStyle
+          }}
+        />
+      )}
 
     </div>
   );

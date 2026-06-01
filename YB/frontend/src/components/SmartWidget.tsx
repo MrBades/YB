@@ -31,17 +31,21 @@ interface SmartWidgetProps {
   }) => void;
 }
 
-const QUICK_ACTIONS = [
-  { id: 'add_voice', label: '🗣️ Add voice note', text: "Record a voice note command detailing a ₦45,000 cash deposit from Baba." },
-  { id: 'improve', label: '📈 Improve tracking', text: "Introduce premium debtor logs by calculating the cumulative credit balance due." },
-  { id: 'extract', label: '🧾 Extract receipt details', text: "Scan and structure the transaction details from my snapped merchant retail invoice." },
-  { id: 'ledger', label: '🏢 General ledger entry', text: "Create general ledger record: Sold 3 bags of Garri to Emeka for 45k each, he deposited 100k cash." },
-];
-
 export default function SmartWidget({ onSaveParsedInvoice, isService = false }: SmartWidgetProps) {
   // Tabs: 'online_or_ai', 'parser_or_offline', 'manual'
   const [activeTab, setActiveTab] = useState<'online_or_ai' | 'parser_or_offline' | 'manual'>('online_or_ai');
   const [text, setText] = useState('');
+  
+  const QUICK_ACTIONS = [
+    { id: 'add_voice', label: '🗣️ Add voice note', text: "Record a voice note command detailing a ₦45,000 cash deposit from Baba." },
+    { id: 'improve', label: '📈 Improve tracking', text: "Introduce premium debtor logs by calculating the cumulative credit balance due." },
+    { id: 'extract', label: '🧾 Extract receipt details', text: "Scan and structure the transaction details from my snapped merchant retail invoice." },
+    { id: 'ledger', label: '🏢 General ledger entry', text: "Create general ledger record: Sold 3 bags of Garri to Emeka for 45k each, he deposited 100k cash." },
+  ].filter(action => {
+    if (isService && action.id === 'ledger') return false;
+    return true;
+  });
+  
   const [imageQueue, setImageQueue] = useState<{ file: File; previewUrl: string }[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -49,7 +53,6 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
   const [isLoading, setIsLoading] = useState(false);
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [showRawOutput, setShowRawOutput] = useState(false);
 
   const handleLocalParse = () => {
     setIsLoading(true);
@@ -715,17 +718,6 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
                 <div className="flex items-center justify-between border-b pb-3 border-gray-150">
                   <h3 className="text-xs font-extrabold text-[#0E1338] uppercase tracking-wider">Bookkeeping Parameter Dashboard</h3>
                   <div className="flex items-center gap-1.5">
-                    {activeTab === 'parser_or_offline' && (
-                      <label className="flex items-center gap-1.5 text-[10px] text-gray-500 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={showRawOutput}
-                          onChange={(e) => setShowRawOutput(e.target.checked)}
-                          className="rounded border-gray-300 text-[#00A6FF] focus:ring-[#00A6FF]"
-                        />
-                        Show Raw Parser Output
-                      </label>
-                    )}
                     {outcome.status === 'fallback_error' ? (
                       <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-250">
                         <AlertTriangle className="w-3.5 h-3.5 text-amber-500 animate-bounce" /> Offline Parser Triggered
@@ -737,12 +729,6 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
                     )}
                   </div>
                 </div>
-
-                {showRawOutput && activeTab === 'parser_or_offline' && (
-                   <div className="bg-gray-100 p-3 rounded-lg text-[10px] font-mono text-gray-700 overflow-x-auto">
-                     {JSON.stringify(outcome, null, 2)}
-                   </div>
-                )}
 
                 {outcome.fallback_message && (
                   <p className="text-xs text-amber-750 bg-amber-50 p-3 rounded-xl border border-amber-150 leading-relaxed font-mono">

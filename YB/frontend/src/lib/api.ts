@@ -4,7 +4,15 @@
  */
 
 // DJANGO_API_BASE_URL: Your Django backend hosted on Vercel
-export const DJANGO_API_BASE_URL = (import.meta.env.VITE_DJANGO_API_URL as string) || (import.meta.env.VITE_API_URL as string) || 'https://yb-alpha.vercel.app';
+const rawUrl = import.meta.env.VITE_DJANGO_API_URL;
+export const DJANGO_API_BASE_URL = (
+  typeof rawUrl === 'string' &&
+  rawUrl.trim() !== '' &&
+  rawUrl !== 'undefined' &&
+  rawUrl !== 'null' &&
+  !rawUrl.includes('undefined') &&
+  !rawUrl.includes('null')
+) ? rawUrl.trim() : '';
 
 export const API_ENDPOINTS = {
     TOKEN: `${DJANGO_API_BASE_URL}/api/token/`,
@@ -32,6 +40,13 @@ export function getDjangoApiUrl(path: string): string {
 export async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
   const url = getDjangoApiUrl(path);
   return fetch(url, options);
+}
+
+/**
+ * Fetch wrapper for Node server endpoints.
+ */
+export async function nodeFetch(path: string, options?: RequestInit): Promise<Response> {
+  return fetch(path, options);
 }
 
 /**
