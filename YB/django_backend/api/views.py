@@ -1,3 +1,5 @@
+import os
+from django.core.management import call_command
 from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -691,6 +693,23 @@ class UnlockAllView(APIView):
     def get(self, request):
         MerchantSession.objects.all().update(is_suspicious_locked=False)
         return Response({"status": "success", "message": "All sessions unlocked."})
+
+
+class AdminMigrateView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        # A simple check: require a header to prevent abuse without SSH
+        secret = request.headers.get('x-admin-secret')
+        if secret != os.environ.get('ADMIN_SECRET', 'temp-dev-secret'):
+             return Response({"error": "Unauthorized"}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        try:
+            call_command('migrate')
+            return Response({"status": "success", "message": "Migrations applied successfully."})
+        except Exception as e:
+            
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class BusinessSettingsView(APIView):

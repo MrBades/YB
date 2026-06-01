@@ -2,7 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Lock } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 
-export default function TerminalView({ shopSlug, workerSlug }: { shopSlug: string; workerSlug: string }) {
+interface TerminalViewProps {
+    shopSlug: string;
+    workerSlug: string;
+    onLoginSuccess?: (session_id: string, staffObj: any, userObj: any) => void;
+}
+
+export default function TerminalView({ shopSlug, workerSlug, onLoginSuccess }: TerminalViewProps) {
     const [pin, setPin] = useState('');
     const [authenticated, setAuthenticated] = useState(false);
     const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -22,15 +28,21 @@ export default function TerminalView({ shopSlug, workerSlug }: { shopSlug: strin
                 // Verify PIN
                 apiFetch(`/api/terminal/${shopSlug}/${workerSlug}/pin-verify`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'x-device-fingerprint': localStorage.getItem('device_fingerprint') || 'unknown_fp'
+                    },
                     body: JSON.stringify({ pin: newPin, latitude: location?.lat, longitude: location?.lng })
                 })
                 .then(res => res.json())
                 .then(data => {
-                    if (data.authenticated) {
+                    if (data.authenticated && data.session_id && data.staff) {
                         setAuthenticated(true);
+                        if (onLoginSuccess) {
+                            onLoginSuccess(data.session_id, data.staff, data.user);
+                        }
                     } else {
-                        alert('Incorrect PIN or unauthorized location');
+                        alert(data.error || 'Incorrect PIN or unauthorized location');
                         setPin('');
                     }
                 });

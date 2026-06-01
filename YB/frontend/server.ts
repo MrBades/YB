@@ -85,6 +85,11 @@ function normalizeContact(phone_or_email: any): string {
     return input;
 }
 
+function generateOTP(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+
 app.post("/api/auth/probe", (req, res) => {
     const raw_phone_or_email = req.body.phone_or_email;
     const phone_or_email = normalizeContact(raw_phone_or_email);
@@ -94,17 +99,81 @@ app.post("/api/auth/probe", (req, res) => {
     if (!user) {
         user = { id: Date.now().toString(), phone_or_email, otp_secret: "1234" }; // Simulated OTP in demo
         db.users.push(user);
-        writeDB(db);
     }
     
+    // WhatsApp Authentication flow
+    if (!db.whatsappVerifications) db.whatsappVerifications = [];
+    const verificationCode = generateOTP();
+    const expiresAt = Date.now() + 180000; // 3 minutes
+    
+    db.whatsappVerifications = db.whatsappVerifications.filter((v: any) => v.phone !== phone_or_email);
+    db.whatsappVerifications.push({ phone: phone_or_email, code: verificationCode, status: 'pending', expiresAt });
+    
+    writeDB(db);
+
     const isNewUser = !user.full_name;
     const hasPin = !!user.owner_pin;
     
     res.json({ 
         newUser: isNewUser,
-        hasPin: hasPin
+        hasPin: hasPin,
+        verificationCode: verificationCode // Frontend uses this to construct the link
     });
 });
+
+app.post("/api/auth/whatsapp-webhook", (req, res) => {
+    const { from_number, message } = req.body;
+    
+    if (!message) return res.status(200).json({ status: "ignored", message: "No message" });
+    
+    // Strict parsing
+    const regex = /^Verify my Yeedem account code:\s*(\d{6})/i;
+    const match = message.match(regex);
+    if (!match) return res.status(200).json({ status: "ignored", message: "Not an auth message" });
+    
+    const token = match[1];
+    
+    const db = readDB();
+    
+    // Find matching pending verification
+    const verification = (db.whatsappVerifications || []).find(
+        (v: any) => normalizeContact(v.phone) === normalizeContact(from_number) && v.code === token && v.status === 'pending' && v.expiresAt > Date.now()
+    );
+
+    if (verification) {
+        verification.status = 'verified';
+        
+        // Also update user verification state
+        const user = db.users.find((u: any) => normalizeContact(u.phone_or_email) === normalizeContact(verification.phone));
+        if (user) {
+            user.isVerified = true;
+        }
+
+        writeDB(db);
+        return res.json({ status: "success" });
+    }
+    
+    res.status(400).json({ error: "Invalid verification code or phone number." });
+});
+
+app.post("/api/auth/check-verification-status", (req, res) => {
+    const { phone_or_email } = req.body;
+    const db = readDB();
+    const verification = (db.whatsappVerifications || []).find(
+        (v: any) => normalizeContact(v.phone) === normalizeContact(phone_or_email)
+    );
+    
+    if (verification && verification.status === 'verified') {
+        // Now proceed to log the user in
+        const user = db.users.find((u: any) => normalizeContact(u.phone_or_email) === normalizeContact(phone_or_email));
+        // ... (login logic as in verify-otp)
+        // For simplicity, just return verified status and let frontend initiate login
+        return res.json({ status: "verified", user });
+    }
+    
+    res.json({ status: verification ? verification.status : 'not_found' });
+});
+
 
 app.post("/api/auth/verify-otp", (req, res) => {
     const { phone_or_email: raw_phone_or_email, otp } = req.body;
@@ -121,8 +190,8 @@ app.post("/api/auth/verify-otp", (req, res) => {
     if (user && otp === '1234') {
         const session_id = Date.now().toString();
         
-        // Remove old sessions for this user to avoid conflicts
-        db.merchantSessions = db.merchantSessions.filter((s: any) => s.user_id !== user.id);
+        // Remove old sessions for this user to avoid conflicts (except staff sessions)
+        db.merchantSessions = db.merchantSessions.filter((s: any) => s.user_id !== user.id || s.is_staff);
         
         const session = { 
             session_id, 
@@ -222,6 +291,8 @@ app.post("/api/auth/pin-login", (req, res) => {
     const db = readDB();
     const user = db.users.find((u: any) => normalizeContact(u.phone_or_email) === phone_or_email);
     
+    console.log(`[DEBUG] PIN Login attempt for phone: ${phone_or_email}, User found: ${!!user}`);
+
     if (!user) {
         return res.status(404).json({ error: "Merchant profile not found on this device." });
     }
@@ -248,7 +319,7 @@ app.post("/api/auth/pin-login", (req, res) => {
         }
     }
     
-    db.merchantSessions = db.merchantSessions.filter((s: any) => s.user_id !== user.id);
+    db.merchantSessions = db.merchantSessions.filter((s: any) => s.user_id !== user.id || s.is_staff);
     const session = {
         session_id,
         user_id: user.id,
@@ -307,8 +378,8 @@ app.post("/api/auth/reset-forgotten-pin", (req, res) => {
 
     const session_id = Date.now().toString();
 
-    // Clear old session
-    db.merchantSessions = db.merchantSessions.filter((s: any) => s.user_id !== user.id);
+    // Clear old session (except staff sessions)
+    db.merchantSessions = db.merchantSessions.filter((s: any) => s.user_id !== user.id || s.is_staff);
     
     // Create new active session, bypassing suspicious locks as they just verified via OTP reset
     const session = {
@@ -352,9 +423,14 @@ app.post("/api/auth/validate-session", requireSession, (req, res) => {
     }
     
     const user = db.users.find((u: any) => u.id === session.user_id);
+    const is_staff = !!session.is_staff;
+    const staffObj = is_staff ? (db.staff || []).find((s: any) => s.id === session.staff_id) : null;
+
     res.json({
         status: "success",
         is_suspicious_locked: session.is_suspicious_locked,
+        is_staff,
+        staff: staffObj,
         user: user ? { 
             id: user.id, 
             phone_or_email: user.phone_or_email, 
@@ -401,6 +477,174 @@ app.post("/api/auth/logout", (req, res) => {
     res.json({ status: "success" });
 });
 
+app.delete("/api/auth/delete-account", requireSession, (req, res) => {
+    try {
+        const user_id = (req as any).user_id;
+        const db = readDB();
+        const user = db.users.find((u: any) => u.id === user_id);
+        
+        if (!user) {
+            return res.status(404).json({ error: "User profile not found." });
+        }
+
+        const email = user.phone_or_email;
+        
+        // Remove user
+        console.log(`[DEBUG] Deleting account for user_id: ${user_id}`);
+        db.users = db.users.filter((u: any) => u.id !== user_id);
+        console.log(`[DEBUG] Remaining users: ${db.users.length}`);
+        
+        // Remove merchant sessions
+        db.merchantSessions = db.merchantSessions.filter((s: any) => s.user_id !== user_id);
+        
+        // Remove staff associated with user
+        db.staff = (db.staff || []).filter((s: any) => s.user_id !== user_id);
+        
+        // Remove staff activity logs associated with user
+        db.staffActivityLogs = (db.staffActivityLogs || []).filter((l: any) => l.user_id !== user_id);
+        
+        writeDB(db);
+        
+        // Purge automated backups for this user
+        if (email) {
+            const safeEmail = email.replace(/[^a-zA-Z0-9]/g, '_');
+            const backupsDir = path.join(process.cwd(), 'data', 'backups');
+            if (fs.existsSync(backupsDir)) {
+                const files = fs.readdirSync(backupsDir);
+                let deletedCount = 0;
+                files.forEach(f => {
+                    if (f.startsWith(`backup_${safeEmail}_`) && f.endsWith('.json')) {
+                        const filePath = path.join(backupsDir, f);
+                        if (fs.existsSync(filePath)) {
+                            fs.unlinkSync(filePath);
+                            deletedCount++;
+                        }
+                    }
+                });
+                console.log(`[PURGE SUCCESS] Purged ${deletedCount} cloud user backup files for ${email}`);
+            }
+        }
+        
+        res.json({ status: "success", message: "Account and associated data deleted successfully." });
+    } catch (err: any) {
+        console.error("Account deletion error:", err);
+        res.status(500).json({ error: err.message || "Failed to delete account" });
+    }
+});
+
+app.get("/api/public/shared-invoice/:token", (req, res) => {
+    try {
+        const token = req.params.token;
+        if (!token) {
+            return res.status(400).json({ error: "Token is required." });
+        }
+
+        const db = readDB();
+        let foundInvoice: any = null;
+        let foundBusiness: any = null;
+        let assocUser: any = null;
+
+        const backupsDir = path.join(process.cwd(), 'data', 'backups');
+        if (fs.existsSync(backupsDir)) {
+            const files = fs.readdirSync(backupsDir)
+                .filter(f => f.endsWith('.json'))
+                .map(f => {
+                    const filePath = path.join(backupsDir, f);
+                    const stats = fs.statSync(filePath);
+                    return { filename: f, mtime: stats.mtime.getTime() };
+                })
+                .sort((a, b) => b.mtime - a.mtime); // Newest backups first
+
+            for (const fileObj of files) {
+                try {
+                    const content = fs.readFileSync(path.join(backupsDir, fileObj.filename), 'utf-8');
+                    const backup = JSON.parse(content);
+                    let customersList: any[] = [];
+                    if (backup) {
+                        if (Array.isArray(backup.customers)) {
+                            customersList = backup.customers;
+                        } else if (backup.data && Array.isArray(backup.data.customers)) {
+                            customersList = backup.data.customers;
+                        }
+                    }
+
+                    if (customersList && customersList.length > 0) {
+                        for (const cust of customersList) {
+                            if (Array.isArray(cust.invoices)) {
+                                for (const inv of cust.invoices) {
+                                    const calcToken = "yb_token_" + inv.id.substring(0, 8);
+                                    if (calcToken === token) {
+                                        foundInvoice = inv;
+                                        if (backup.businessProfile) {
+                                            foundBusiness = backup.businessProfile;
+                                        } else if (backup.business) {
+                                            foundBusiness = backup.business;
+                                        }
+                                        const fileEmail = backup.email || (backup.data && backup.data.email);
+                                        let user = null;
+                                        if (fileEmail) {
+                                            user = db.users.find((u: any) => (u.phone_or_email || "").toLowerCase().trim() === fileEmail.toLowerCase().trim());
+                                        }
+
+                                        if (!user) {
+                                            let fileEmailToken = "";
+                                            const fname = fileObj.filename;
+                                            if (fname.startsWith("backup_") && fname.endsWith(".json")) {
+                                                const sub = fname.substring("backup_".length, fname.length - ".json".length);
+                                                const lastUnderscore = sub.lastIndexOf("_");
+                                                if (lastUnderscore !== -1) {
+                                                    fileEmailToken = sub.substring(0, lastUnderscore);
+                                                }
+                                            }
+
+                                            if (fileEmailToken) {
+                                                user = db.users.find((u: any) => {
+                                                    const cleanUserEmail = (u.phone_or_email || "").replace(/[^a-zA-Z0-9]/g, '_');
+                                                    return cleanUserEmail === fileEmailToken;
+                                                });
+                                            }
+                                        }
+
+                                        if (user) {
+                                            assocUser = user;
+                                            if (!foundBusiness) {
+                                                foundBusiness = user.business;
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                            if (foundInvoice) break;
+                        }
+                    }
+                } catch (parseErr) {
+                    // skip corrupted files
+                }
+                if (foundInvoice) break;
+            }
+        }
+
+        if (!foundInvoice) {
+            return res.status(404).json({ 
+                error: "Invoice not found on the cloud server. The merchant might not have updated their cloud backup recently." 
+            });
+        }
+
+        res.json({
+            invoice: foundInvoice,
+            business: foundBusiness || {
+                businessName: assocUser?.business_name || "Merchant Hub",
+                invoiceTemplatePreference: "modern_blue",
+                customAccentColor: "#00A6FF"
+            }
+        });
+    } catch (err: any) {
+        console.error("Shared invoice retrieve error:", err);
+        res.status(500).json({ error: err.message || "Failed to load shared invoice data" });
+    }
+});
+
 app.get("/api/admin/unlock-all", (req, res) => {
     const db = readDB();
     db.merchantSessions.forEach((s: any) => s.is_suspicious_locked = false);
@@ -416,10 +660,46 @@ app.post("/api/terminal/:shop_slug/:worker_slug/pin-verify", (req, res) => {
     const staff = db.staff.find((s: any) => s.name_slug === worker_slug && s.is_active);
     
     if (staff && staff.owner_generated_pin === pin) {
+        // Create an active session tied to the owner's account with is_staff and staff_id flags
+        const session_id = "staff_sess_" + Math.random().toString(36).substring(2, 15);
+        const deviceFingerprint = req.headers['x-device-fingerprint'] || 'unknown_fp';
+        const approxRegion = req.headers['x-approx-region'] || 'NG-Lagos';
+        const client_ip = (Array.isArray(req.headers['x-forwarded-for']) 
+            ? req.headers['x-forwarded-for'][0] 
+            : req.headers['x-forwarded-for']) || req.socket.remoteAddress || '127.0.0.1';
+
+        const session = {
+            session_id,
+            user_id: staff.user_id,
+            device_fingerprint: deviceFingerprint,
+            last_active_ip: client_ip,
+            last_active_region: approxRegion,
+            is_suspicious_locked: false,
+            is_staff: true,
+            staff_id: staff.id
+        };
+        db.merchantSessions.push(session);
+
         // Log successful access
         db.staffActivityLogs.push({ id: Date.now().toString(), staff_id: staff.id, action_taken: 'PIN_LOGIN', timestamp: Date.now(), is_flagged: false });
         writeDB(db);
-        res.json({ authenticated: true, staff_id: staff.id });
+
+        // Find associated merchant user
+        const user = db.users.find((u: any) => u.id === staff.user_id);
+
+        res.json({ 
+            authenticated: true, 
+            session_id, 
+            staff,
+            user: user ? { 
+                id: user.id, 
+                phone_or_email: user.phone_or_email, 
+                full_name: user.full_name, 
+                business_name: user.business_name, 
+                business_type: user.business_type || 'buy_and_sell',
+                business: user.business || null
+            } : null
+        });
     } else {
         // Log failed access attempt
         db.staffActivityLogs.push({ id: Date.now().toString(), action_taken: 'FAILED_PIN_LOGIN', timestamp: Date.now(), is_flagged: true });
@@ -434,7 +714,8 @@ app.use("/api/staff/log", requireSession);
 // --- Module 4/5: Staff Terminal Management API ---
 app.get("/api/staff", (req, res) => {
     const user_id = (req as any).user_id;
-    if (!user_id) return res.status(401).json({ error: "Unauthorized" });
+    const session = (req as any).session;
+    if (!user_id || (session && session.is_staff)) return res.status(401).json({ error: "Unauthorized" });
 
     const db = readDB();
     const user = db.users.find((u: any) => u.id === user_id);
@@ -468,7 +749,8 @@ app.post("/api/staff/log", (req, res) => {
 
 app.get("/api/staff/log", (req, res) => {
     const user_id = (req as any).user_id;
-    if (!user_id) return res.status(401).json({ error: "Unauthorized" });
+    const session = (req as any).session;
+    if (!user_id || (session && session.is_staff)) return res.status(401).json({ error: "Unauthorized" });
 
     const db = readDB();
     res.json((db.staffActivityLogs || []).filter((l:any) => l.user_id === user_id));
@@ -477,7 +759,8 @@ app.get("/api/staff/log", (req, res) => {
 app.post("/api/staff", (req, res) => {
     try {
         const user_id = (req as any).user_id;
-        if (!user_id) return res.status(401).json({ error: "Unauthorized" });
+        const session = (req as any).session;
+        if (!user_id || (session && session.is_staff)) return res.status(401).json({ error: "Unauthorized" });
 
         const db = readDB();
         const user = db.users.find((u: any) => u.id === user_id);
@@ -493,7 +776,14 @@ app.post("/api/staff", (req, res) => {
             name_slug: name_slug || rawName,
             owner_generated_pin: req.body.owner_generated_pin,
             is_active: true,
-            shop_slug: shop_slug
+            shop_slug: shop_slug,
+            // Toggleable staff permissions
+            allow_create_invoices: true,
+            allow_view_customers: true,
+            allow_view_inventory: true,
+            allow_view_costs: false,
+            allow_delete_invoices: false,
+            allow_manage_products: false
         };
         db.staff = [...(db.staff || []), newStaff];
         writeDB(db);
@@ -507,6 +797,9 @@ app.post("/api/staff", (req, res) => {
 app.put("/api/staff/:id", requireSession, (req, res) => {
     const db = readDB();
     const user_id = (req as any).user_id;
+    const session = (req as any).session;
+    if (!user_id || (session && session.is_staff)) return res.status(401).json({ error: "Unauthorized" });
+
     const index = db.staff.findIndex((s: any) => s.id === req.params.id && s.user_id === user_id);
     if (index !== -1) {
         db.staff[index] = { ...db.staff[index], ...req.body, user_id };
@@ -757,7 +1050,7 @@ app.post("/api/smart-input", async (req, res) => {
     
     let isMismatched = false;
     if (device_fingerprint && device_fingerprint !== 'unknown_fp' && device_fingerprint !== 'unknown') {
-        if (session.device_fingerprint === 'fp_default_owner' || !session.device_fingerprint) {
+        if (session.device_fingerprint === 'fp_default_owner' || !session.device_fingerprint || session.device_fingerprint === 'unknown_fp' || session.device_fingerprint === 'unknown') {
             session.device_fingerprint = device_fingerprint;
             writeDB(db);
         } else if (device_fingerprint !== 'fp_default_owner' && session.device_fingerprint !== device_fingerprint) {
@@ -970,7 +1263,7 @@ app.post("/api/smart-product", async (req, res) => {
     
     let isMismatched = false;
     if (device_fingerprint && device_fingerprint !== 'unknown_fp' && device_fingerprint !== 'unknown') {
-        if (session.device_fingerprint === 'fp_default_owner' || !session.device_fingerprint) {
+        if (session.device_fingerprint === 'fp_default_owner' || !session.device_fingerprint || session.device_fingerprint === 'unknown_fp' || session.device_fingerprint === 'unknown') {
             session.device_fingerprint = device_fingerprint;
             writeDB(db);
         } else if (device_fingerprint !== 'fp_default_owner' && session.device_fingerprint !== device_fingerprint) {
@@ -1107,6 +1400,130 @@ if (!fs.existsSync(BACKUPS_DIR)) {
   fs.mkdirSync(BACKUPS_DIR, { recursive: true });
 }
 
+function mergeLedgers(incoming: any, existing: any) {
+    if (!existing || !existing.data) return incoming;
+    if (!incoming || !incoming.data) return existing;
+    
+    const merged = JSON.parse(JSON.stringify(incoming));
+    if (!merged.data) merged.data = {};
+    const existingData = existing.data;
+    
+    // 1. Merge Customers & Invoices
+    const incomingCustomers = merged.data.customers || [];
+    const existingCustomers = existingData.customers || [];
+    const customerMap = new Map<string, any>();
+    
+    const getCustKey = (c: any) => {
+        return (c.name || '').trim().toLowerCase();
+    };
+    
+    for (const cust of existingCustomers) {
+        const key = getCustKey(cust);
+        customerMap.set(key, { ...cust, invoices: [...(cust.invoices || [])] });
+    }
+    
+    for (const cust of incomingCustomers) {
+        const key = getCustKey(cust);
+        const existingCust = customerMap.get(key);
+        if (existingCust) {
+            const invoiceMap = new Map<string, any>();
+            for (const inv of existingCust.invoices || []) {
+                if (inv && inv.id) {
+                    invoiceMap.set(inv.id, inv);
+                }
+            }
+            for (const inv of cust.invoices || []) {
+                if (inv && inv.id) {
+                    const existingInv = invoiceMap.get(inv.id);
+                    if (existingInv) {
+                        const existingTime = new Date(existingInv.createdAt || 0).getTime();
+                        const incomingTime = new Date(inv.createdAt || 0).getTime();
+                        if (incomingTime >= existingTime) {
+                            invoiceMap.set(inv.id, inv);
+                        }
+                    } else {
+                        invoiceMap.set(inv.id, inv);
+                    }
+                }
+            }
+            
+            const mergedInvoices = Array.from(invoiceMap.values());
+            
+            const activeDebtBalance = mergedInvoices.reduce((sum: number, inv: any) => {
+                if (inv.transactionType === 'sale') {
+                    return sum + (inv.debtBalance || 0);
+                }
+                return sum;
+            }, 0);
+            
+            customerMap.set(key, {
+                ...existingCust,
+                id: cust.id || existingCust.id,
+                phone: cust.phone || existingCust.phone,
+                email: cust.email || existingCust.email,
+                activeDebtBalance,
+                createdDate: (cust.createdDate && existingCust.createdDate && cust.createdDate < existingCust.createdDate) ? cust.createdDate : (cust.createdDate || existingCust.createdDate),
+                invoices: mergedInvoices
+            });
+        } else {
+            customerMap.set(key, { ...cust });
+        }
+    }
+    merged.data.customers = Array.from(customerMap.values());
+    
+    // 2. Merge Products & Stocks
+    const incomingProducts = merged.data.products || [];
+    const existingProducts = existingData.products || [];
+    const productMap = new Map<string, any>();
+    
+    const getProdKey = (p: any) => {
+        return (p.name || '').trim().toLowerCase();
+    };
+    
+    for (const prod of existingProducts) {
+        productMap.set(getProdKey(prod), { ...prod });
+    }
+    
+    for (const prod of incomingProducts) {
+        const key = getProdKey(prod);
+        const existingProd = productMap.get(key);
+        if (existingProd) {
+            productMap.set(key, {
+                ...existingProd,
+                ...prod
+            });
+        } else {
+            productMap.set(key, { ...prod });
+        }
+    }
+    merged.data.products = Array.from(productMap.values());
+    
+    // 3. Merge Restock logs
+    const incomingLogs = merged.data.restockLogs || [];
+    const existingLogs = existingData.restockLogs || [];
+    const logMap = new Map<string, any>();
+    
+    for (const log of existingLogs) {
+        if (log && log.id) logMap.set(log.id, log);
+    }
+    for (const log of incomingLogs) {
+        if (log && log.id) logMap.set(log.id, log);
+    }
+    merged.data.restockLogs = Array.from(logMap.values());
+    
+    // 4. Merge Business Settings
+    if (existing.businessProfile && !merged.businessProfile) {
+        merged.businessProfile = existing.businessProfile;
+    } else if (merged.businessProfile && existing.businessProfile) {
+        merged.businessProfile = {
+            ...existing.businessProfile,
+            ...merged.businessProfile
+        };
+    }
+    
+    return merged;
+}
+
 app.post("/api/backup/save", (req, res) => {
     try {
         const session_id = req.headers['x-session-id'] as string;
@@ -1122,20 +1539,51 @@ app.post("/api/backup/save", (req, res) => {
             return res.status(400).json({ error: "Missing email or backupData parameters" });
         }
         
-        // Sanitize email for safe filename
         const safeEmail = email.replace(/[^a-zA-Z0-9]/g, '_');
+        
+        // Fetch existing latest backup file to merge
+        let existingBackupData: any = null;
+        if (fs.existsSync(BACKUPS_DIR)) {
+            const files = fs.readdirSync(BACKUPS_DIR);
+            const userBackupFiles = files
+                .filter(f => f.startsWith(`backup_${safeEmail}_`) && f.endsWith('.json'))
+                .map(f => {
+                    const filePath = path.join(BACKUPS_DIR, f);
+                    const stats = fs.statSync(filePath);
+                    return {
+                        filename: f,
+                        mtime: stats.mtime.getTime()
+                    };
+                })
+                .sort((a, b) => b.mtime - a.mtime);
+            
+            if (userBackupFiles.length > 0) {
+                const latestFile = userBackupFiles[0].filename;
+                const filePath = path.join(BACKUPS_DIR, latestFile);
+                try {
+                    existingBackupData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+                } catch (e) {
+                    console.error("Failed to parse existing backup for auto-merge:", e);
+                }
+            }
+        }
+
+        // Run Bidirectional auto-merger logic on server
+        const mergedBackupData = mergeLedgers(backupData, existingBackupData);
+        
         const timestamp = new Date().toISOString().replace(/:/g, '-');
         const fileName = `backup_${safeEmail}_${timestamp}.json`;
         const filePath = path.join(BACKUPS_DIR, fileName);
         
-        fs.writeFileSync(filePath, JSON.stringify(backupData, null, 2), 'utf-8');
-        console.log(`[BACKUP SUCCESS] Clean daily automated backup file saved: ${fileName} for ${email}`);
+        fs.writeFileSync(filePath, JSON.stringify(mergedBackupData, null, 2), 'utf-8');
+        console.log(`[BACKUP SUCCESS] Bidirectionally merged automated backup file saved: ${fileName} for ${email}`);
         
         res.json({ 
             status: "success", 
-            message: "Ledger backup exported and written to server local storage disk successfully.",
+            message: "Ledger backup exported, bidirectionally merged, and written to server disk successfully.",
             filename: fileName,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            mergedData: mergedBackupData
         });
     } catch (err: any) {
         console.error("Backup write error:", err);
@@ -1272,10 +1720,28 @@ app.get("/api/images/:shop_slug/logo.png", (req, res) => {
 
 // Configure Vite or Static Servers
 async function start() {
+  // Sync the user-provided logo to public assets for browser titles/favicons/link previews
+  try {
+    const logoSrc = path.join(process.cwd(), 'src', 'assets', 'images', 'yeedem_books_logo_1779553023368.png');
+    const publicDir = path.join(process.cwd(), 'public');
+    if (fs.existsSync(logoSrc)) {
+      if (!fs.existsSync(publicDir)) {
+        fs.mkdirSync(publicDir, { recursive: true });
+      }
+      fs.copyFileSync(logoSrc, path.join(publicDir, 'favicon.png'));
+      fs.copyFileSync(logoSrc, path.join(publicDir, 'pwa_icon_logo.png'));
+      console.log('⚡ Successfully synced public favicons and pwa_icon_logo with user-supplied logo.');
+    } else {
+      console.warn('⚠️ User og/favicon logo asset not found at:', logoSrc);
+    }
+  } catch (err) {
+    console.error('❌ Failed to copy custom logo assets to public:', err);
+  }
+
   const getInjectedHtml = async (url: string, template: string, db: any, host: string) => {
     let ogTitle = "Yeedem Books - Fast Bookkeeping & Invoicing";
     let ogDesc = "Automated ledger tracking and real-time debt bookkeeping parameters for modern Nigerian merchant enterprises.";
-    let ogImage = "https://yeedem.com/static/assets/yb_official_logo.png";
+    let ogImage = `https://${host}/pwa_icon_logo.png`;
 
     const terminalMatch = url.match(/^\/terminal\/([^\/]+)\/([^\/]+)/);
     if (terminalMatch) {

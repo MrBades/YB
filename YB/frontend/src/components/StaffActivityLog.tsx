@@ -13,20 +13,30 @@ interface ActivityLog {
     is_flagged: boolean;
 }
 
-export default function StaffActivityLog({ onUnauthorized, isSuspiciousLocked, deviceFingerprint, approxRegion }: { onUnauthorized: () => void, isSuspiciousLocked: boolean, deviceFingerprint?: string, approxRegion?: string }) {
+export default function StaffActivityLog({ 
+    onUnauthorized, 
+    isSuspiciousLocked, 
+    deviceFingerprint, 
+    approxRegion,
+    currentUserRole = 'owner',
+    isAuthenticated = false
+}: { 
+    onUnauthorized: () => void; 
+    isSuspiciousLocked: boolean; 
+    deviceFingerprint?: string; 
+    approxRegion?: string;
+    currentUserRole?: 'owner' | 'cashier';
+    isAuthenticated?: boolean;
+}) {
     const [logs, setLogs] = useState<ActivityLog[]>([]);
 
-    if (isSuspiciousLocked) {
-        return (
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mt-4 text-center">
-                <p className="font-bold text-red-500 mb-2">Suspicious session detected</p>
-                <p className="text-xs text-gray-500">Please verify your account to unlock.</p>
-            </div>
-        );
-    }
+    const sesId = localStorage.getItem('session_id');
 
     useEffect(() => {
+        if (!isAuthenticated) return;
         if (isSuspiciousLocked) return;
+        if ((currentUserRole as string) === 'cashier') return;
+        
         let active = true;
 
         // Fetch logs with x-session-id header
@@ -65,13 +75,43 @@ export default function StaffActivityLog({ onUnauthorized, isSuspiciousLocked, d
         })
         .catch(err => {
             if (active) {
-                console.error('Error fetching staff logs:', err);
+                // If the error is not 'Unauthorized session', log it
+                if (err.message !== 'Unauthorized session') {
+                    console.error('Error fetching staff logs:', err);
+                }
                 setLogs([]);
             }
         });
 
         return () => { active = false; };
-    }, [onUnauthorized, isSuspiciousLocked, deviceFingerprint, approxRegion]);
+    }, [onUnauthorized, isSuspiciousLocked, deviceFingerprint, approxRegion, currentUserRole, isAuthenticated]);
+
+    // If not authenticated, return null immediately
+    if (!isAuthenticated) {
+        return null;
+    }
+
+    if (isSuspiciousLocked) {
+        return (
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mt-4 text-center">
+                <p className="font-bold text-red-500 mb-2">Suspicious session detected</p>
+                <p className="text-xs text-gray-500">Please verify your account to unlock.</p>
+            </div>
+        );
+    }
+
+    if (currentUserRole === 'cashier') {
+        return null;
+    }
+    
+    if (!sesId) {
+        return (
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mt-4 text-center">
+                <p className="font-bold text-gray-500 mb-2">Unauthorized</p>
+                <p className="text-xs text-gray-500">Please log in to access staff activity logs.</p>
+            </div>
+        );
+    }
 
     const safeLogs = Array.isArray(logs) ? logs : [];
 
