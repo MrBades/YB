@@ -554,7 +554,7 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
       if (res.ok) {
         setOutcome(data);
       } else {
-        setError("Extraction service error: " + (data.error || "Unknown response state"));
+        setError("Extraction service error: " + (data.error || data.detail || "Unknown response state"));
       }
 
     } catch (err: any) {

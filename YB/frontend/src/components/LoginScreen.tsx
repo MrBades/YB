@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, Smartphone, ShieldCheck, ArrowRightLeft, Sparkles, AlertTriangle, Key } from 'lucide-react';
+import { Lock, Smartphone, ShieldCheck, ArrowRightLeft, Sparkles, AlertTriangle, Key, Loader2 } from 'lucide-react';
 import LogoImg from '../assets/images/yeedem_books_logo_1779553023368.png';
 import { apiFetch } from '../lib/api';
 
@@ -44,6 +44,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
   
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingText, setLoadingText] = useState('');
   const [error, setError] = useState('');
   const [simulatedOtpNotice, setSimulatedOtpNotice] = useState('');
   
@@ -58,29 +59,28 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
     }
   }, [storedPhone]);
 
-  // Keyboard support for PIN entry
-  useEffect(() => {
-    if (step !== 'pin_lock') return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (loading) return;
-
-      if (e.key >= '0' && e.key <= '9') {
-        handlePinLogin(e.key);
-      } else if (e.key === 'Backspace') {
-        setPinAttempt(prev => prev.slice(0, -1));
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [step, loading, pinAttempt]);
-
   const headers = {
     'Content-Type': 'application/json',
     'x-device-fingerprint': deviceFingerprint || 'unknown_fp',
     'x-approx-region': approxRegion || 'NG-Lagos'
   };
+
+  // Automated transitions for 4-digit steps
+  useEffect(() => {
+    if (step === 'otp' && otp.length === 4) {
+      verifyOtp();
+    } else if (step === 'set_pin' && newPin.length === 4) {
+      handleSavePin();
+    } else if (step === 'confirm_pin' && confirmPin.length === 4) {
+      handleConfirmPin();
+    } else if (step === 'forgot_otp' && otp.length === 4) {
+      verifyForgotOtp();
+    } else if (step === 'forgot_new_pin' && newPin.length === 4) {
+      handleForgotSavePin();
+    } else if (step === 'forgot_confirm_pin' && confirmPin.length === 4) {
+      handleForgotConfirmPin();
+    }
+  }, [otp, newPin, confirmPin, step]);
 
   const sendForgotOtp = async () => {
     const input = normalizeContact(phoneOrEmail);
@@ -89,6 +89,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
       return;
     }
     setLoading(true);
+    setLoadingText('Requesting recovery code...');
     setError('');
     setSimulatedOtpNotice('');
     try {
@@ -110,12 +111,14 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
       setError(e.message || 'Verification gateway unreachable. Try again.');
     } finally {
       setLoading(false);
+      setLoadingText('');
     }
   };
 
   const verifyForgotOtp = async () => {
     if (otp.trim() !== '1234') {
       setError('Invalid 4-digit OTP. Enter 1234 for simulation.');
+      setOtp('');
       return;
     }
     setStep('forgot_new_pin');
@@ -142,6 +145,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
 
     const cleanContact = normalizeContact(phoneOrEmail);
     setLoading(true);
+    setLoadingText('Resetting vault access...');
     setError('');
     try {
       const res = await apiFetch('/api/auth/reset-forgotten-pin', {
@@ -151,7 +155,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
       });
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.error || 'PIN reset flow failed.');
+        throw new Error(errData.error || errData.detail || 'PIN reset flow failed.');
       }
       const data = await res.json();
       if (data.session_id) {
@@ -165,6 +169,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
       setError(e.message || 'Forgot PIN reset process encountered an error.');
     } finally {
       setLoading(false);
+      setLoadingText('');
     }
   };
 
@@ -192,6 +197,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
     setPhoneOrEmail(input);
 
     setLoading(true);
+    setLoadingText('Locating ledger profile...');
     setError('');
     setSimulatedOtpNotice('');
     try {
@@ -209,13 +215,13 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
         setStep('pin_lock');
       } else {
         setStep('otp');
-        // WhatsApp simulation dispatch notice
         setSimulatedOtpNotice(`WhatsApp: Standard OTP dispatched securely to ${input}. Default code is [1234].`);
       }
     } catch (e: any) {
       setError(e.message || 'Verification gateway unreachable. Try again.');
     } finally {
       setLoading(false);
+      setLoadingText('');
     }
   };
 
@@ -226,10 +232,12 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
     }
     if (otp.trim() !== '1234') {
       setError('Invalid 4-digit OTP. Enter 1234 for simulation.');
+      setOtp('');
       return;
     }
     const cleanContact = normalizeContact(phoneOrEmail);
     setLoading(true);
+    setLoadingText('Verifying identity...');
     setError('');
     try {
       const res = await apiFetch('/api/auth/verify-otp', {
@@ -239,7 +247,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
       });
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.error || 'Invalid OTP code entered.');
+        throw new Error(errData.error || errData.detail || 'Invalid OTP code entered.');
       }
       const data = await res.json();
       
@@ -260,8 +268,10 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
       }
     } catch (e: any) {
       setError(e.message || 'OTP check failed.');
+      setOtp('');
     } finally {
       setLoading(false);
+      setLoadingText('');
     }
   };
 
@@ -294,9 +304,9 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
 
     const cleanContact = normalizeContact(phoneOrEmail);
     setLoading(true);
+    setLoadingText('Securing your vault...');
     setError('');
     try {
-      // 1. Commit PIN to express backend
       const res = await apiFetch('/api/auth/set-pin', {
         method: 'POST',
         headers,
@@ -304,7 +314,6 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
       });
       if (!res.ok) throw new Error('Failed to configure PIN.');
 
-      // 2. Perform authenticating verification to log them in
       const authRes = await apiFetch('/api/auth/pin-login', {
         method: 'POST',
         headers,
@@ -322,6 +331,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
       setError(e.message || 'Failed to authorize secret PIN.');
     } finally {
       setLoading(false);
+      setLoadingText('');
     }
   };
 
@@ -334,6 +344,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
       if (nextAttempt.length === 4) {
         const cleanContact = normalizeContact(phoneOrEmail);
         setLoading(true);
+        setLoadingText('Unlocking Storefront...');
         try {
           const res = await apiFetch('/api/auth/pin-login', {
             method: 'POST',
@@ -343,24 +354,45 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
           const data = await res.json();
           
           if (res.status === 403 || data.is_suspicious_locked) {
-            // Suspicious session triggered on server side!
-            // Route or elevate to WhatsApp/OTP unlock Screen directly.
-            // We save the session so that App.tsx can show OTP block!
             onLogin(data.session_id || 'suspended_session', cleanContact, data.user);
           } else if (res.ok && data.session_id) {
             onLogin(data.session_id, cleanContact, data.user);
           } else {
             setPinAttempt('');
-            setError(data.error || 'Incorrect 4-digit Master PIN code.');
+            setError(data.error || data.detail || 'Incorrect 4-digit Master PIN code.');
           }
         } catch (err) {
           setError('Hardware connection error. Please try again.');
           setPinAttempt('');
         } finally {
           setLoading(false);
+          setLoadingText('');
         }
       }
     }
+  };
+
+  const handleKeypadPress = (val: string) => {
+    if (loading) return;
+    setError('');
+
+    if (step === 'pin_lock') {
+      handlePinLogin(val);
+    } else if (step === 'otp' || step === 'forgot_otp') {
+      if (otp.length < 4) setOtp(prev => prev + val);
+    } else if (step === 'set_pin' || step === 'forgot_new_pin') {
+      if (newPin.length < 4) setNewPin(prev => prev + val);
+    } else if (step === 'confirm_pin' || step === 'forgot_confirm_pin') {
+      if (confirmPin.length < 4) setConfirmPin(prev => prev + val);
+    }
+  };
+
+  const handleBackspace = () => {
+    if (loading) return;
+    if (step === 'pin_lock') setPinAttempt(prev => prev.slice(0, -1));
+    else if (step === 'otp' || step === 'forgot_otp') setOtp(prev => prev.slice(0, -1));
+    else if (step === 'set_pin' || step === 'forgot_new_pin') setNewPin(prev => prev.slice(0, -1));
+    else if (step === 'confirm_pin' || step === 'forgot_confirm_pin') setConfirmPin(prev => prev.slice(0, -1));
   };
 
   const clearAuthProfile = () => {
@@ -392,9 +424,95 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
     );
   };
 
+  // Keyboard support for 4-digit entries
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['pin_lock', 'otp', 'set_pin', 'confirm_pin', 'forgot_otp', 'forgot_new_pin', 'forgot_confirm_pin'].includes(step)) {
+        if (e.key >= '0' && e.key <= '9') {
+          handleKeypadPress(e.key);
+        } else if (e.key === 'Backspace') {
+          handleBackspace();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [step, loading, otp, newPin, confirmPin, pinAttempt]);
+
+  const renderKeypad = () => (
+    <div className="space-y-6">
+      <div className="flex justify-center gap-4 py-2">
+        {[1, 2, 3, 4].map(idx => {
+          let isFilled = false;
+          if (step === 'pin_lock') isFilled = pinAttempt.length >= idx;
+          else if (step === 'otp' || step === 'forgot_otp') isFilled = otp.length >= idx;
+          else if (step === 'set_pin' || step === 'forgot_new_pin') isFilled = newPin.length >= idx;
+          else if (step === 'confirm_pin' || step === 'forgot_confirm_pin') isFilled = confirmPin.length >= idx;
+
+          return (
+            <div
+              key={idx}
+              className={`w-4 h-4 rounded-full border border-blue-400/30 transition-all ${
+                isFilled ? 'bg-[#00A6FF] scale-110 shadow-md shadow-[#00A6FF]/50' : 'bg-white/5'
+              }`}
+            />
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-3 gap-3 max-w-[240px] mx-auto pb-2">
+        {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(num => (
+          <button
+            key={num}
+            type="button"
+            onClick={() => handleKeypadPress(num)}
+            disabled={loading}
+            className="w-14 h-14 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 text-lg font-bold flex items-center justify-center transition text-white outline-none cursor-pointer"
+          >
+            {num}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            if (step === 'pin_lock') setPinAttempt('');
+            else if (step === 'otp' || step === 'forgot_otp') setOtp('');
+            else if (step === 'set_pin' || step === 'forgot_new_pin') setNewPin('');
+            else if (step === 'confirm_pin' || step === 'forgot_confirm_pin') setConfirmPin('');
+          }}
+          className="text-[10px] text-slate-400 font-bold hover:text-white uppercase tracking-tighter"
+        >
+          Reset
+        </button>
+        <button
+          type="button"
+          onClick={() => handleKeypadPress('0')}
+          disabled={loading}
+          className="w-14 h-14 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 text-lg font-bold flex items-center justify-center transition text-white cursor-pointer"
+        >
+          0
+        </button>
+        <button
+          type="button"
+          onClick={handleBackspace}
+          className="text-[10px] text-slate-400 font-bold hover:text-white uppercase tracking-tighter"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="w-full bg-[#161C48] rounded-[32px] p-8 border border-white/10 shadow-2xl text-center space-y-6 max-w-md mx-auto relative overflow-hidden">
       
+      {loading && (
+        <div className="absolute inset-0 bg-[#161C48]/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center space-y-3 animate-fadeIn">
+          <Loader2 className="w-10 h-10 text-[#00A6FF] animate-spin" />
+          <p className="text-[#00A6FF] font-bold text-sm tracking-wide">{loadingText || 'Please wait...'}</p>
+        </div>
+      )}
+
       {/* Decorative Branding header token */}
       <div className="flex justify-center">
         <div className="w-16 h-16 bg-white border border-white/20 rounded-2xl flex items-center justify-center shadow-lg overflow-hidden p-1.5 hover:scale-105 transition duration-300">
@@ -409,6 +527,8 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
         <p className="text-xs text-slate-300 px-2 leading-relaxed">
           {step === 'pin_lock' 
             ? `Enter the 4-digit Master PIN configured for ${phoneOrEmail} to resume books.`
+            : step === 'otp'
+            ? 'Enter the 4-digit verification code sent to your credentials.'
             : step === 'set_pin' 
             ? 'Configure a unique 4-digit storefront master lock PIN.'
             : step === 'confirm_pin'
@@ -432,70 +552,68 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
         </div>
       )}
 
-      {/* 1. Fast PIN-Bypass Code Pad View */}
-      {step === 'pin_lock' && (
+      {/* 1. Keypad-based steps */}
+      {['pin_lock', 'otp', 'set_pin', 'confirm_pin', 'forgot_otp', 'forgot_new_pin', 'forgot_confirm_pin'].includes(step) && (
         <div className="space-y-6">
-          <div className="flex justify-center gap-4 py-2">
-            {[1, 2, 3, 4].map(idx => (
-              <div 
-                key={idx} 
-                className={`w-4 h-4 rounded-full border border-blue-400/30 transition-all ${
-                  pinAttempt.length >= idx ? 'bg-[#00A6FF] scale-110 shadow-md shadow-[#00A6FF]/50' : 'bg-white/5'
-                }`}
-              />
-            ))}
-          </div>
+          {simulatedOtpNotice && (step === 'otp' || step === 'forgot_otp') && (
+            <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl text-left text-[11px] text-emerald-300 space-y-1 max-w-sm mx-auto">
+              <span className="font-bold flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5" /> Token Transmitted:
+              </span>
+              <p className="font-mono text-[10px] leading-tight text-emerald-400">{simulatedOtpNotice}</p>
+            </div>
+          )}
 
-          {/* Simulated Keypad for Fast Pin Entry */}
-          <div className="grid grid-cols-3 gap-3 max-w-[240px] mx-auto pb-2">
-            {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(num => (
-              <button
-                key={num}
-                type="button"
-                onClick={() => handlePinLogin(num)}
-                disabled={loading}
-                className="w-14 h-14 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 text-lg font-bold flex items-center justify-center transition text-white outline-none"
-              >
-                {num}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setPinAttempt('')}
-              className="text-xs text-slate-400 font-bold hover:text-white"
-            >
-              Clear
-            </button>
-            <button
-              type="button"
-              onClick={() => handlePinLogin('0')}
-              disabled={loading}
-              className="w-14 h-14 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 text-lg font-bold flex items-center justify-center transition text-white"
-            >
-              0
-            </button>
-          </div>
+          {step === 'set_pin' && (
+             <div className="bg-blue-500/15 border border-blue-500/25 p-3 rounded-xl text-left text-[11px] text-blue-300 leading-relaxed font-mono max-w-sm mx-auto">
+                * Setup PIN Loop: Use this 4-digit code on this device for all future entries bypassing the OTP.
+             </div>
+          )}
+
+          {renderKeypad()}
+
           <div className="flex items-center justify-between px-6 max-w-[245px] mx-auto text-xs font-semibold pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                setError('');
-                setStep('forgot_phone');
-              }}
-              className="text-[10px] text-blue-400 font-semibold hover:underline"
-            >
-              Forgot master PIN?
-            </button>
-            <span className="w-1 h-1 bg-white/20 rounded-full"></span>
-            <button
-              type="button"
-              onClick={clearAuthProfile}
-              className="text-[10px] text-red-400 font-semibold hover:underline"
-              title="De-authorize profiling to log in as another merchant."
-            >
-              Switch User
-            </button>
+            {step === 'pin_lock' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError('');
+                    setStep('forgot_phone');
+                  }}
+                  className="text-[10px] text-blue-400 font-semibold hover:underline cursor-pointer"
+                >
+                  Forgot master PIN?
+                </button>
+                <span className="w-1 h-1 bg-white/20 rounded-full"></span>
+                <button
+                  type="button"
+                  onClick={clearAuthProfile}
+                  className="text-[10px] text-red-400 font-semibold hover:underline cursor-pointer"
+                  title="De-authorize profiling to log in as another merchant."
+                >
+                  Switch User
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setError('');
+                  if (step === 'otp') setStep('phone');
+                  else if (step === 'set_pin') setStep('otp');
+                  else if (step === 'confirm_pin') setStep('set_pin');
+                  else if (step === 'forgot_otp') setStep('forgot_phone');
+                  else if (step === 'forgot_new_pin') setStep('forgot_otp');
+                  else if (step === 'forgot_confirm_pin') setStep('forgot_new_pin');
+                }}
+                className="text-[10px] text-slate-400 font-semibold hover:underline mx-auto cursor-pointer"
+              >
+                Go Back
+              </button>
+            )}
           </div>
+          {step === 'set_pin' && renderTermsDisclaimer()}
         </div>
       )}
 
@@ -514,7 +632,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
             disabled={loading}
             className={`bg-[#00A6FF] hover:bg-opacity-95 active:scale-95 text-white p-3.5 rounded-xl w-full font-bold text-xs transition-all shadow-lg shadow-blue-500/20 ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
           >
-            {loading ? 'Initializing ledger connection...' : 'Verify Account Profile'}
+            Verify Account Profile
           </button>
           <div className="flex justify-center pt-1">
             <button
@@ -523,106 +641,11 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
                 setError('');
                 setStep('forgot_phone');
               }}
-              className="text-[11px] text-[#00A6FF]/90 font-bold hover:underline"
+              className="text-[11px] text-[#00A6FF]/90 font-bold hover:underline cursor-pointer"
             >
               Forgot master PIN? Recover Account
             </button>
           </div>
-        </div>
-      )}
-
-      {/* 3. OTP verification screen */}
-      {step === 'otp' && (
-        <div className="space-y-5 max-w-sm mx-auto">
-          {simulatedOtpNotice && (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl text-left text-[11px] text-emerald-300 space-y-1">
-              <span className="font-bold flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" /> Hook Transmitted Successfully:
-              </span>
-              <p className="font-mono text-[10px] leading-tight text-emerald-400">{simulatedOtpNotice}</p>
-            </div>
-          )}
-          
-          <input 
-            className="p-3.5 rounded-xl w-full bg-white/10 hover:bg-white/15 focus:bg-white/20 text-white placeholder-slate-400 border border-white/20 focus:border-[#00A6FF] transition outline-none font-black text-center text-sm tracking-widest" 
-            placeholder="Type 1234 here" 
-            value={otp} 
-            maxLength={4}
-            onChange={e => setOtp(e.target.value)} 
-          />
-          
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setStep('phone')}
-              className="bg-white/5 hover:bg-white/10 text-slate-300 p-3.5 rounded-xl flex-1 font-bold text-xs transition"
-            >
-              Back
-            </button>
-            <button 
-              onClick={verifyOtp} 
-              disabled={loading}
-              className="bg-[#00A6FF] hover:bg-opacity-95 active:scale-95 text-white p-3.5 rounded-xl flex-1 font-bold text-xs transition shadow-lg shadow-blue-500/25"
-            >
-              Verify Secure Code
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 4. PIN creation step on onboarding */}
-      {step === 'set_pin' && (
-        <div className="space-y-4 max-w-sm mx-auto">
-          <div className="bg-blue-500/15 border border-blue-500/25 p-3 rounded-xl text-left text-[11px] text-blue-300 leading-relaxed font-mono">
-            * Setup PIN Loop: Use this 4-digit code on this phone/computer for all future entries directly bypassing the OTP.
-          </div>
-          <input 
-            className="p-3.5 rounded-xl w-full bg-white/10 hover:bg-white/15 focus:bg-white/20 text-white placeholder-slate-400 border border-white/20 focus:border-[#00A6FF] transition outline-none font-black text-center text-sm tracking-widest" 
-            placeholder="Set 4-Digit Master PIN" 
-            value={newPin} 
-            maxLength={4}
-            type="password"
-            onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))} 
-          />
-          <button 
-            type="button"
-            onClick={handleSavePin}
-            className="bg-[#00A6FF] hover:bg-opacity-95 active:scale-95 text-white p-3.5 rounded-xl w-full font-bold text-xs transition"
-          >
-            Configure Vault Lock PIN
-          </button>
-          {renderTermsDisclaimer()}
-        </div>
-      )}
-
-      {/* 5. PIN confirmation step */}
-      {step === 'confirm_pin' && (
-        <div className="space-y-4 max-w-sm mx-auto">
-          <input 
-            className="p-3.5 rounded-xl w-full bg-white/10 hover:bg-white/15 focus:bg-white/20 text-white placeholder-slate-400 border border-white/20 focus:border-[#00A6FF] transition outline-none font-black text-center text-sm tracking-widest" 
-            placeholder="Confirm PIN" 
-            value={confirmPin} 
-            maxLength={4}
-            type="password"
-            onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ''))} 
-          />
-          
-          <div className="flex gap-2">
-            <button 
-              onClick={() => { setConfirmPin(''); setStep('set_pin'); }}
-              className="bg-white/5 hover:bg-white/10 text-slate-300 p-3.5 rounded-xl flex-1 font-bold text-xs transition"
-            >
-              Back
-            </button>
-            <button 
-              type="button"
-              onClick={handleConfirmPin}
-              disabled={loading}
-              className="bg-[#00A6FF] hover:bg-opacity-95 active:scale-95 text-white p-3.5 rounded-xl flex-1 font-bold text-xs transition shadow-lg"
-            >
-              {isNewUser ? 'Next: Personal Info' : 'Confirm and Unlock Ledger'}
-            </button>
-          </div>
-          {isNewUser && renderTermsDisclaimer()}
         </div>
       )}
 
@@ -661,7 +684,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
             <div className="grid grid-cols-1 gap-2">
               <button
                 type="button"
-                className={`p-3 rounded-xl border text-xs font-semibold text-left transition duration-200 flex flex-col ${
+                className={`p-3 rounded-xl border text-xs font-semibold text-left transition duration-200 flex flex-col cursor-pointer ${
                   businessType === 'buy_and_sell'
                     ? 'bg-[#00A6FF]/25 border-[#00A6FF] text-white shadow-[#00A6FF]/20 shadow-sm'
                     : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300'
@@ -674,7 +697,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
               
               <button
                 type="button"
-                className={`p-3 rounded-xl border text-xs font-semibold text-left transition duration-200 flex flex-col ${
+                className={`p-3 rounded-xl border text-xs font-semibold text-left transition duration-200 flex flex-col cursor-pointer ${
                   businessType === 'service'
                     ? 'bg-[#00A6FF]/25 border-[#00A6FF] text-white shadow-[#00A6FF]/20 shadow-sm'
                     : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300'
@@ -704,6 +727,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
                   return;
                 }
                 setLoading(true);
+                setLoadingText('Finalizing registration...');
                 setError('');
                 try {
                   const res = await apiFetch('/api/auth/register-onboarding', {
@@ -719,7 +743,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
                   });
                   if (!res.ok) {
                     const errInfo = await res.json().catch(() => ({}));
-                    throw new Error(errInfo.error || 'Server rejected onboarding. Please try again.');
+                    throw new Error(errInfo.error || errInfo.detail || 'Server rejected onboarding. Please try again.');
                   }
                   
                   localStorage.setItem('authorized_phone_or_email', cleanContact);
@@ -733,7 +757,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
                   
                   if (!authRes.ok) {
                     const errInfo = await authRes.json().catch(() => ({}));
-                    throw new Error(errInfo.error || 'Failed to authenticate secure session after registration.');
+                    throw new Error(errInfo.error || errInfo.detail || 'Failed to authenticate secure session after registration.');
                   }
                   
                   const authData = await authRes.json();
@@ -745,9 +769,10 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
                   setError(e.message || 'Onboarding gateway error. Please try again.'); 
                 } finally { 
                   setLoading(false); 
+                  setLoadingText('');
                 }
             }}
-            className="bg-[#00A6FF] hover:bg-opacity-95 active:scale-95 text-white p-3.5 rounded-xl w-full font-bold text-xs transition"
+            className="bg-[#00A6FF] hover:bg-opacity-95 active:scale-95 text-white p-3.5 rounded-xl w-full font-bold text-xs transition cursor-pointer"
           >
             Complete Registration
           </button>
@@ -769,7 +794,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
             <button 
               type="button"
               onClick={() => { setError(''); setStep('phone'); }}
-              className="bg-white/5 hover:bg-white/10 text-slate-300 p-3.5 rounded-xl flex-1 font-bold text-xs transition"
+              className="bg-white/5 hover:bg-white/10 text-slate-300 p-3.5 rounded-xl flex-1 font-bold text-xs transition cursor-pointer"
             >
               Back
             </button>
@@ -777,9 +802,9 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
               type="button"
               onClick={sendForgotOtp} 
               disabled={loading}
-              className="bg-[#00A6FF] hover:bg-opacity-95 active:scale-95 text-white p-3.5 rounded-xl flex-[2] font-bold text-xs transition shadow-lg tracking-wide animate-pulse-subtle"
+              className="bg-[#00A6FF] hover:bg-opacity-95 active:scale-95 text-white p-3.5 rounded-xl flex-[2] font-bold text-xs transition shadow-lg tracking-wide animate-pulse-subtle cursor-pointer"
             >
-              {loading ? 'Sending OTP...' : 'Send Recovery OTP'}
+              Send Recovery OTP
             </button>
           </div>
           <div className="pt-2 text-center text-xs text-slate-300">
@@ -791,102 +816,9 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
                 setPhoneOrEmail('');
                 setStep('phone');
               }}
-              className="text-[#00A6FF] font-extrabold hover:underline ml-1"
+              className="text-[#00A6FF] font-extrabold hover:underline ml-1 cursor-pointer"
             >
               Sign Up / Register Here
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Recovery Step: Forgot OTP */}
-      {step === 'forgot_otp' && (
-        <div className="space-y-5 max-w-sm mx-auto">
-          {simulatedOtpNotice && (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl text-left text-[11px] text-emerald-300 space-y-1">
-              <span className="font-bold flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" /> Token Transmitted:
-              </span>
-              <p className="font-mono text-[10px] leading-tight text-emerald-400">{simulatedOtpNotice}</p>
-            </div>
-          )}
-          
-          <input 
-            className="p-3.5 rounded-xl w-full bg-white/10 hover:bg-white/15 focus:bg-white/20 text-white placeholder-slate-400 border border-white/20 focus:border-[#00A6FF] transition outline-none font-black text-center text-sm tracking-widest" 
-            placeholder="Type 1234 here" 
-            value={otp} 
-            maxLength={4}
-            onChange={e => setOtp(e.target.value)} 
-          />
-          
-          <div className="flex gap-2">
-            <button 
-              type="button"
-              onClick={() => { setError(''); setStep('forgot_phone'); }}
-              className="bg-white/5 hover:bg-white/10 text-slate-300 p-3.5 rounded-xl flex-1 font-bold text-xs transition"
-            >
-              Back
-            </button>
-            <button 
-              type="button"
-              onClick={verifyForgotOtp} 
-              disabled={loading}
-              className="bg-[#00A6FF] hover:bg-opacity-95 active:scale-95 text-white p-3.5 rounded-xl flex-1 font-bold text-xs transition shadow-lg"
-            >
-              Verify Code
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Recovery Step: Forgot New Pin */}
-      {step === 'forgot_new_pin' && (
-        <div className="space-y-4 max-w-sm mx-auto">
-          <input 
-            className="p-3.5 rounded-xl w-full bg-white/10 hover:bg-white/15 focus:bg-white/20 text-white placeholder-slate-400 border border-white/20 focus:border-[#00A6FF] transition outline-none font-black text-center text-sm tracking-widest" 
-            placeholder="Set New 4-Digit Master PIN" 
-            value={newPin} 
-            maxLength={4}
-            type="password"
-            onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))} 
-          />
-          <button 
-            type="button"
-            onClick={handleForgotSavePin}
-            className="bg-[#00A6FF] hover:bg-opacity-95 active:scale-95 text-white p-3.5 rounded-xl w-full font-bold text-xs transition"
-          >
-            Confirm Pin Set
-          </button>
-        </div>
-      )}
-
-      {/* Recovery Step: Forgot Confirm Pin */}
-      {step === 'forgot_confirm_pin' && (
-        <div className="space-y-4 max-w-sm mx-auto">
-          <input 
-            className="p-3.5 rounded-xl w-full bg-white/10 hover:bg-white/15 focus:bg-white/20 text-white placeholder-slate-400 border border-white/20 focus:border-[#00A6FF] transition outline-none font-black text-center text-sm tracking-widest" 
-            placeholder="Re-enter New PIN to Confirm" 
-            value={confirmPin} 
-            maxLength={4}
-            type="password"
-            onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ''))} 
-          />
-          
-          <div className="flex gap-2">
-            <button 
-              type="button"
-              onClick={() => { setConfirmPin(''); setStep('forgot_new_pin'); }}
-              className="bg-white/5 hover:bg-white/10 text-slate-300 p-3.5 rounded-xl flex-1 font-bold text-xs transition"
-            >
-              Back
-            </button>
-            <button 
-              type="button"
-              onClick={handleForgotConfirmPin}
-              disabled={loading}
-              className="bg-[#00A6FF] hover:bg-opacity-95 active:scale-95 text-white p-3.5 rounded-xl flex-[2] font-bold text-xs transition shadow-lg"
-            >
-              {loading ? 'Applying PIN Reset...' : 'Reset PIN & Access Ledger'}
             </button>
           </div>
         </div>

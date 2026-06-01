@@ -246,9 +246,26 @@ class DashboardMetricsAPIView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, *args, **kwargs):
-        user, err = get_session_user(request)
-        if err:
-            return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
+        session_id = request.headers.get('x-session-id')
+        user = None
+        if session_id and session_id not in ["null", "undefined", ""]:
+            user, err = get_session_user(request)
+            if err:
+                return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if not user:
+             # Return empty/zero metrics for guest mode
+             return Response({
+                "metrics": {
+                    "total_outstanding_debt": 0.0,
+                    "total_sales": 0.0,
+                    "total_paid": 0.0,
+                    "total_products": 0,
+                    "low_stock_count": 0,
+                    "recent_debt": 0.0,
+                    "aged_over_30_debt": 0.0
+                }
+            })
 
         profile = get_object_or_404(BusinessProfile, user=user)
 
