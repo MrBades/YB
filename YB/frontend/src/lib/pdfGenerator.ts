@@ -762,3 +762,307 @@ export function generateInvoicePDF(
   const filename = `${businessName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_invoice_${formattedInvoiceId}.pdf`;
   doc.save(filename);
 }
+
+/**
+ * Generates and downloads a clean, multi-page, formatted PDF summary ledger report of all transactions.
+ */
+export function generateTransactionsSummaryPDF(
+  invoices: Invoice[],
+  business?: BusinessProfile,
+  filters?: {
+    searchTerm?: string;
+    typeFilter?: string;
+    debtFilter?: string;
+  }
+) {
+  const doc = new jsPDF({
+    unit: 'pt',
+    format: 'a4'
+  });
+
+  const businessName = business?.businessName || 'Yeedem Merchant';
+  const accentColor = business?.customAccentColor || '#0E1338';
+  
+  // Custom font selection
+  const activeFont = 'Helvetica';
+
+  // Hex to RGB helper
+  const hexToRgb = (hex: string) => {
+    const cleanHex = hex.replace('#', '');
+    const num = parseInt(cleanHex, 16);
+    return {
+      r: (num >> 16) & 255,
+      g: (num >> 8) & 255,
+      b: num & 255
+    };
+  };
+  const rgbAccent = hexToRgb(accentColor);
+
+  let pageNum = 1;
+
+  const drawPageHeaderAndBranding = (page: number) => {
+    // Top colored banner bar
+    doc.setFillColor(rgbAccent.r, rgbAccent.g, rgbAccent.b);
+    doc.rect(30, 30, 535, 12, 'F');
+
+    // Title
+    doc.setTextColor(14, 19, 56); // Deep charcoal black
+    doc.setFont(activeFont, "bold");
+    doc.setFontSize(15);
+    doc.text(businessName.toUpperCase(), 35, 62);
+
+    doc.setFont(activeFont, "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 110, 140);
+    doc.text("FINANCIAL TRANSACTIONS REGISTER & HISTORICAL SUMMARY", 35, 76);
+
+    // Right metrics info
+    doc.setFont(activeFont, "normal");
+    doc.setFontSize(7.5);
+    const dateStr = new Date().toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+    doc.text(`Generated: ${dateStr}`, 565, 58, { align: 'right' });
+    doc.text(`Page: ${page}`, 565, 72, { align: 'right' });
+
+    // Filter statuses
+    if (filters) {
+      let filterText = "Active Filters: ";
+      if (filters.typeFilter && filters.typeFilter !== 'all') filterText += `[Type: ${filters.typeFilter}] `;
+      if (filters.debtFilter && filters.debtFilter !== 'all') filterText += `[Status: ${filters.debtFilter}] `;
+      if (filters.searchTerm) filterText += `[Query: "${filters.searchTerm}"] `;
+      if (filterText === "Active Filters: ") filterText += "All Records";
+      doc.text(filterText.substring(0, 95), 35, 88);
+    }
+
+    // Border header lines
+    doc.setDrawColor(220, 225, 235);
+    doc.setLineWidth(1);
+    doc.line(30, 96, 565, 96);
+  };
+
+  const drawSummaryKPIs = () => {
+    // calculate summary items
+    let totalSales = 0;
+    let totalExpenses = 0;
+    let totalSettlements = 0;
+    let totalOutstanding = 0;
+
+    invoices.forEach(inv => {
+      if (inv.transactionType === 'sale') {
+        totalSales += inv.totalAmount;
+        totalOutstanding += inv.debtBalance;
+      } else if (inv.transactionType === 'expense') {
+        totalExpenses += inv.totalAmount;
+      } else if (inv.transactionType === 'payment_on_account') {
+        totalSettlements += inv.totalAmount;
+      }
+    });
+
+    const boxW = 122;
+    const boxH = 42;
+    const startX = 35;
+    const yVal = 106;
+    const gap = 12;
+
+    const items = [
+      { label: "TRANSACTIONS COUNT", val: `${invoices.length} Entries`, color: [14, 19, 56] },
+      { label: "GROSS SALES (₦)", val: `${totalSales.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`, color: [16, 185, 129] },
+      { label: "OUTSTANDING CREDIT", val: `${totalOutstanding.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`, color: [220, 38, 38] },
+      { label: "CAPITAL SETTLED", val: `${totalSettlements.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`, color: [59, 130, 246] }
+    ];
+
+    items.forEach((item, i) => {
+      const curX = startX + i * (boxW + gap);
+      // Background card
+      doc.setFillColor(248, 250, 252);
+      doc.rect(curX, yVal, boxW, boxH, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.rect(curX, yVal, boxW, boxH, 'S');
+
+      // Left indicator highlight bar
+      doc.setFillColor(item.color[0], item.color[1], item.color[2]);
+      doc.rect(curX, yVal, 3, boxH, 'F');
+
+      // Label text
+      doc.setFont(activeFont, "bold");
+      doc.setFontSize(6.5);
+      doc.setTextColor(100, 110, 140);
+      doc.text(item.label, curX + 10, yVal + 14);
+
+      // Value text
+      doc.setFont(activeFont, "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(item.color[0], item.color[1], item.color[2]);
+      doc.text(item.val, curX + 10, yVal + 30);
+    });
+  };
+
+  const drawPageFooter = (page: number) => {
+    doc.setFillColor(243, 244, 246);
+    doc.rect(30, 760, 535, 20, 'F');
+    doc.setTextColor(110, 120, 145);
+    doc.setFont(activeFont, "bold");
+    doc.setFontSize(7.5);
+    doc.text("Yeedem Business Intelligence Ledger • Secure Transaction Export Report", 297, 772, { align: 'center' });
+  };
+
+  // Initial render
+  drawPageHeaderAndBranding(pageNum);
+  drawSummaryKPIs();
+
+  // Table header offset and paint
+  const tableHeaderY = 162;
+  doc.setFillColor(rgbAccent.r, rgbAccent.g, rgbAccent.b);
+  doc.rect(35, tableHeaderY, 525, 20, 'F');
+
+  doc.setFont(activeFont, "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text("TIMESTAMP", 42, tableHeaderY + 13);
+  doc.text("REFERENCE", 130, tableHeaderY + 13);
+  doc.text("CLIENT / MERCHANT CONTACT", 192, tableHeaderY + 13);
+  doc.text("TYPE", 310, tableHeaderY + 13);
+  doc.text("MEMO DETAILS", 370, tableHeaderY + 13);
+  doc.text("AMOUNT SUM", 460, tableHeaderY + 13, { align: 'right' });
+  doc.text("DEBT BALANCE", 550, tableHeaderY + 13, { align: 'right' });
+
+  let yOffset = tableHeaderY + 20;
+
+  invoices.forEach((inv, index) => {
+    // Dynamic page wrapping calculation
+    if (yOffset > 730) {
+      drawPageFooter(pageNum);
+      doc.addPage();
+      pageNum++;
+      
+      // Page header Setup
+      drawPageHeaderAndBranding(pageNum);
+      
+      const subHeaderY = 110;
+      doc.setFillColor(rgbAccent.r, rgbAccent.g, rgbAccent.b);
+      doc.rect(35, subHeaderY, 525, 20, 'F');
+      doc.setFont(activeFont, "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text("TIMESTAMP", 42, subHeaderY + 13);
+      doc.text("REFERENCE", 130, subHeaderY + 13);
+      doc.text("CLIENT / MERCHANT CONTACT", 192, subHeaderY + 13);
+      doc.text("TYPE", 310, subHeaderY + 13);
+      doc.text("MEMO DETAILS", 370, subHeaderY + 13);
+      doc.text("AMOUNT SUM", 460, subHeaderY + 13, { align: 'right' });
+      doc.text("DEBT BALANCE", 550, subHeaderY + 13, { align: 'right' });
+
+      yOffset = subHeaderY + 20;
+    }
+
+    // Zebra row background formatting striping
+    if (index % 2 === 0) {
+      doc.setFillColor(252, 253, 254);
+    } else {
+      doc.setFillColor(242, 244, 247);
+    }
+    doc.rect(35, yOffset, 525, 22, 'F');
+
+    // Bottom dotted style separator line
+    doc.setDrawColor(230, 234, 241);
+    doc.setLineWidth(0.5);
+    doc.line(35, yOffset + 22, 560, yOffset + 22);
+
+    doc.setTextColor(75, 80, 95);
+    doc.setFont(activeFont, "normal");
+    doc.setFontSize(7.5);
+    
+    // Parse timestamp
+    const formattedDate = new Date(inv.createdAt).toLocaleString(undefined, {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+    doc.text(formattedDate, 42, yOffset + 14);
+
+    // Reference identifier trimmed
+    doc.text(inv.id.substring(0, 14).toUpperCase() + '...', 130, yOffset + 14);
+
+    // Client context
+    doc.setFont(activeFont, "bold");
+    doc.setTextColor(15, 20, 35);
+    const clientName = inv.customerName || 'Walk-in Customer';
+    const croppedClientName = clientName.length > 22 ? clientName.substring(0, 20) + '..' : clientName;
+    doc.text(croppedClientName, 192, yOffset + 14);
+
+    // Trade action category
+    let categoryText: string = inv.transactionType;
+    let textRGB = [80, 80, 80];
+    if (inv.transactionType === 'sale') {
+      categoryText = 'Wholesale Sale';
+      textRGB = [16, 185, 129];
+    } else if (inv.transactionType === 'expense') {
+      categoryText = 'Expense Outflow';
+      textRGB = [100, 110, 120];
+    } else if (inv.transactionType === 'payment_on_account') {
+      categoryText = 'Settlement Recv';
+      textRGB = [59, 130, 246];
+    }
+    doc.setTextColor(textRGB[0], textRGB[1], textRGB[2]);
+    doc.text(categoryText.toUpperCase(), 310, yOffset + 14);
+
+    // Details memo
+    doc.setTextColor(70, 75, 90);
+    doc.setFont(activeFont, "normal");
+    const memo = inv.productName || 'General cargo';
+    const croppedMemo = memo.length > 18 ? memo.substring(0, 16) + '..' : memo;
+    doc.text(croppedMemo, 370, yOffset + 14);
+
+    // Invoiced Amount sum
+    doc.setFont(activeFont, "bold");
+    doc.setTextColor(15, 20, 35);
+    const amountStr = inv.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    doc.text(`₦${amountStr}`, 460, yOffset + 14, { align: 'right' });
+
+    // Outstanding Debt column
+    const balanceStr = (inv.debtBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    if (inv.debtBalance > 0) {
+      doc.setTextColor(220, 38, 38);
+    } else {
+      doc.setTextColor(110, 120, 130);
+    }
+    doc.text(`₦${balanceStr}`, 550, yOffset + 14, { align: 'right' });
+
+    yOffset += 22;
+  });
+
+  // Render ending calculated details footer
+  if (yOffset > 710) {
+    drawPageFooter(pageNum);
+    doc.addPage();
+    pageNum++;
+    drawPageHeaderAndBranding(pageNum);
+    yOffset = 110;
+  }
+
+  // Draw filtered totals block container
+  doc.setFillColor(243, 246, 252);
+  doc.rect(34, yOffset + 5, 526, 25, 'F');
+  doc.setDrawColor(rgbAccent.r, rgbAccent.g, rgbAccent.b);
+  doc.setLineWidth(1.2);
+  doc.line(34, yOffset + 5, 560, yOffset + 5);
+
+  let filterSumTotal = 0;
+  let filterSumDebt = 0;
+  invoices.forEach(inv => {
+    filterSumTotal += inv.totalAmount;
+    filterSumDebt += inv.debtBalance;
+  });
+
+  doc.setFont(activeFont, "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(rgbAccent.r, rgbAccent.g, rgbAccent.b);
+  doc.text("FILTERED LIST AGGREGATE:", 42, yOffset + 21);
+
+  doc.text(`₦${filterSumTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 460, yOffset + 21, { align: 'right' });
+  doc.text(`₦${filterSumDebt.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 550, yOffset + 21, { align: 'right' });
+
+  drawPageFooter(pageNum);
+
+  const cleanBusinessName = businessName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  doc.save(`yeedem_${cleanBusinessName}_transactions_report.pdf`);
+}

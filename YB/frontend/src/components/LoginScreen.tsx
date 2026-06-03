@@ -280,6 +280,19 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
       setLoadingText('');
     }
   };
+<<<<<<< HEAD
+=======
+    
+  const handlePinInput = (value: string) => {
+      setError('');
+      if (/^\d{0,4}$/.test(value)) {
+          setPinAttempt(value);
+          if (value.length === 4) {
+              triggerPinLogin(value);
+          }
+      }
+  };
+>>>>>>> main
 
   const handleSavePin = async () => {
     if (newPin.length !== 4) {
@@ -526,6 +539,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
         </div>
       </div>
 
+<<<<<<< HEAD
       <div className="space-y-2">
         <h1 className="text-2xl font-black font-serif text-white tracking-tight">
           {step === 'pin_lock' ? 'Storefront Vault Locked' : step.startsWith('forgot_') ? 'Reset Master PIN' : 'Yeedem Merchant Hub'}
@@ -548,6 +562,62 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
             : step === 'forgot_confirm_pin'
             ? 'Re-enter your new 4-digit Master PIN to confirm and log in.'
             : 'Access your secure bookkeeping ledger files safely across multiple operational environments.'}
+=======
+        {/* Step: PIN Lock */}
+        {step === 'pin_lock' && (
+            <div className="space-y-4">
+                <h2 className="text-white text-xl font-bold">Enter PIN</h2>
+                <div className="flex justify-center gap-2 relative">
+                    <input 
+                        type="number" 
+                        ref={pinInputRef} 
+                        value={pinAttempt} 
+                        onChange={(e) => handlePinInput(e.target.value)} 
+                        className="opacity-0 absolute inset-0 w-full h-full cursor-default"
+                        onBlur={() => { if(step === 'pin_lock') pinInputRef.current?.focus() }}
+                    />
+                    {[...Array(4)].map((_, i) => (
+                        <div key={i} className={`w-4 h-4 rounded-full ${i < pinAttempt.length ? 'bg-white' : 'bg-white/20'}`}></div>
+                    ))}
+                </div>
+                {error && <p className="text-red-400 text-xs">{error}</p>}
+                
+                {/* Keypad */}
+                <div className="grid grid-cols-3 gap-2 mt-4">
+                    {[1,2,3,4,5,6,7,8,9,0].map((num) => (
+                        <button key={num} onClick={() => handlePinInput(pinAttempt + num.toString())} className="bg-white/10 text-white p-4 rounded-xl text-xl font-bold">
+                            {num}
+                        </button>
+                    ))}
+                    <button onClick={() => setPinAttempt(pinAttempt.slice(0, -1))} className="bg-white/5 text-white p-4 rounded-xl text-sm font-bold">Del</button>
+                </div>
+                
+                <button onClick={clearAuthProfile} className="text-white/60 text-xs underline">Switch Account</button>
+            </div>
+        )}
+
+        {/* Example of WhatsApp Verify View */}
+        {step === 'whatsapp_verify' && (
+            <div className="space-y-4">
+                <h2 className="text-white text-xl font-bold">Verify via WhatsApp</h2>
+                <p className="text-white text-sm">Verifying your account via WhatsApp. Tap to verify:</p>
+                <a 
+                    href={waLink} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="block bg-emerald-600 p-4 rounded-xl text-white font-bold"
+                >
+                    Verify via WhatsApp
+                </a>
+                <p className="text-white text-xs">Expires in {Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}</p>
+                 <p className="text-white/60 text-xs text-center">Or manually message: Verify my Yeedem account code: {verificationCode} to +234 802 841 6553</p>
+                 <button onClick={clearAuthProfile} className="text-white/60 text-xs underline mt-2 block w-full">Switch Account</button>
+            </div>
+        )}
+      
+        <p className="text-[10px] text-slate-400 font-mono tracking-tight select-none pt-4">
+            Simulated Client Environment: Geo={approxRegion} | IP={deviceFingerprint ? deviceFingerprint.substring(0,8) : 'Detecting...'}
+>>>>>>> main
         </p>
       </div>
 

@@ -187,7 +187,7 @@ export default function SmartProductWidget({ onSaveProduct, isService = false }:
                 : 'text-gray-300 hover:text-white hover:bg-white/5'
             }`}
           >
-            <span>📝 Manual Input</span>
+            <span>📝 Manual</span>
           </button>
         </div>
 
