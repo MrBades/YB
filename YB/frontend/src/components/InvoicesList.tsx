@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Invoice, BusinessProfile } from '../types';
-import { generateInvoicePDF } from '../lib/pdfGenerator';
+import { generateInvoicePDF, generateTransactionsSummaryPDF } from '../lib/pdfGenerator';
 import BrandingPreviewModal from './BrandingPreviewModal';
 import { 
   Search, 
@@ -127,6 +127,13 @@ export default function InvoicesList({
       return matchesSearch && matchesType && matchesDebt;
     });
   }, [invoices, searchTerm, typeFilter, debtFilter]);
+
+  const filteredSummary = useMemo(() => {
+    return filteredInvoices.reduce((acc, inv) => ({
+      totalAmount: acc.totalAmount + (inv.totalAmount || 0),
+      totalDebt: acc.totalDebt + (inv.debtBalance || 0)
+    }), { totalAmount: 0, totalDebt: 0 });
+  }, [filteredInvoices]);
 
   const getStatusBadge = (inv: Invoice) => {
     if (inv.transactionType === 'payment_on_account') {
@@ -276,6 +283,18 @@ export default function InvoicesList({
             <span className="text-[10px] font-mono px-2.5 py-1 bg-white/10 rounded-full border border-white/5 text-[#00A6FF]">
               Verified: {filteredInvoices.length} entries of {invoices.length}
             </span>
+
+            {filteredInvoices.length > 0 && (
+              <button
+                type="button"
+                onClick={() => generateTransactionsSummaryPDF(filteredInvoices, business, { searchTerm, typeFilter, debtFilter })}
+                className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-extrabold px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full transition duration-150 shadow-md cursor-pointer border border-emerald-500/20"
+                title="Download formatted transaction summary PDF for all matching records"
+              >
+                <FileText className="w-2.5 h-2.5" />
+                <span>Export Summary Report</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -288,6 +307,7 @@ export default function InvoicesList({
                 <th className="py-3 px-4">Debted Client</th>
                 <th className="py-3 px-4">Acquired Goods</th>
                 <th className="py-3 px-4 text-center">Status</th>
+                <th className="py-3 px-4">Staff</th>
                 <th className="py-3 px-4 text-right">Invoice Sum</th>
                 <th className="py-3 px-4 text-right">Cleared Cash</th>
                 <th className="py-3 px-6 text-center">Receipt Workspace</th>
@@ -304,166 +324,178 @@ export default function InvoicesList({
                   </td>
                 </tr>
               ) : (
-                filteredInvoices.map((inv) => {
-                  const isEditing = editingInvoiceId === inv.id;
-                  return (
-                    <tr key={inv.id} className={`border-b border-gray-105 transition duration-150 ${isEditing ? 'bg-blue-50/20' : 'hover:bg-gray-50/40'}`}>
-                      <td className="py-3 px-6 text-gray-400 font-mono">
-                        {new Date(inv.createdAt).toLocaleString(undefined, {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </td>
-                      <td className="py-3 px-4 font-mono">
-                        <button
-                          type="button"
-                          onClick={() => onSelectInvoice(inv)}
-                          className="font-mono font-bold text-left text-[#00A6FF] hover:text-[#0E1338] hover:underline focus:outline-none transition-colors uppercase tracking-wider text-[10px] cursor-pointer"
-                          title="Click to preview this invoice"
-                        >
-                          {inv.id.substring(0, 10)}...
-                        </button>
-                      </td>
-                      <td className="py-3 px-4">
-                        {isEditing ? (
-                          <input 
-                            type="text"
-                            value={editCustName}
-                            onChange={(e) => setEditCustName(e.target.value)}
-                            className="w-full text-xs font-bold font-sans p-1.5 border border-gray-200 focus:ring-1 focus:ring-[#00A6FF] rounded bg-white text-gray-800"
-                          />
-                        ) : (
-                          <p className="font-extrabold text-gray-900">{inv.customerName}</p>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 font-normal text-gray-600 truncate max-w-[150px]" title={inv.productName}>
-                        {isEditing ? (
-                          <input 
-                            type="text"
-                            value={editProdName}
-                            onChange={(e) => setEditProdName(e.target.value)}
-                            className="w-full text-xs p-1.5 border border-gray-200 focus:ring-1 focus:ring-[#00A6FF] rounded bg-white text-gray-800"
-                          />
-                        ) : (
-                          inv.productName
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        {isEditing ? (
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-100 px-2 py-0.5 rounded">Editing</span>
-                        ) : (
-                          getStatusBadge(inv)
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right font-extrabold font-mono text-gray-800 text-[11px]">
-                        {isEditing ? (
-                          <input 
-                            type="number"
-                            value={editTotalAmount}
-                            onChange={(e) => setEditTotalAmount(e.target.value)}
-                            className="w-24 text-xs font-bold font-mono text-right p-1.5 border border-gray-200 focus:ring-1 focus:ring-[#00A6FF] rounded bg-white text-gray-800"
-                          />
-                        ) : (
-                          <>₦{(inv.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right font-bold font-mono text-emerald-700 text-[11px]">
-                        {isEditing ? (
-                          <input 
-                            type="number"
-                            value={editAmountPaid}
-                            onChange={(e) => setEditAmountPaid(e.target.value)}
-                            className="w-24 text-xs font-bold font-mono text-right p-1.5 border border-gray-200 focus:ring-1 focus:ring-[#00A6FF] rounded bg-white text-gray-800"
-                          />
-                        ) : (
-                          <>₦{(inv.amountPaid || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</>
-                        )}
-                      </td>
-                      <td className="py-3 px-6 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
+                <>
+                  {filteredInvoices.map((inv) => {
+                    const isEditing = editingInvoiceId === inv.id;
+                    return (
+                      <tr key={inv.id} className={`border-b border-gray-105 transition duration-150 ${isEditing ? 'bg-blue-50/20' : 'hover:bg-gray-50/40'}`}>
+                        <td className="py-3 px-6 text-gray-400 font-mono">
+                          {new Date(inv.createdAt).toLocaleString(undefined, {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </td>
+                        <td className="py-3 px-4 font-mono">
+                          <button
+                            type="button"
+                            onClick={() => onSelectInvoice(inv)}
+                            className="font-mono font-bold text-left text-[#00A6FF] hover:text-[#0E1338] hover:underline focus:outline-none transition-colors uppercase tracking-wider text-[10px] cursor-pointer"
+                            title="Click to preview this invoice"
+                          >
+                            {inv.id.substring(0, 10)}...
+                          </button>
+                        </td>
+                        <td className="py-3 px-4">
                           {isEditing ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleSaveInvoiceEditLocal(inv.id)}
-                                className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition"
-                                title="Save changes"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditingInvoiceId(null)}
-                                className="p-1.5 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-lg transition"
-                                title="Abort changes"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </>
+                            <input 
+                              type="text"
+                              value={editCustName}
+                              onChange={(e) => setEditCustName(e.target.value)}
+                              className="w-full text-xs font-bold font-sans p-1.5 border border-gray-200 focus:ring-1 focus:ring-[#00A6FF] rounded bg-white text-gray-800"
+                            />
                           ) : (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => onSelectInvoice(inv)}
-                                className="px-2.5 py-1 bg-gray-50 hover:bg-[#00A6FF]/10 text-gray-750 hover:text-[#0E1338] hover:border-[#00A6FF]/20 border border-gray-200 font-bold rounded-lg text-[10px] uppercase tracking-wide transition flex items-center gap-1 cursor-pointer"
-                              >
-                                <Eye className="w-3.5 h-3.5" /> View
-                              </button>
-                              {business && (
-                                <button
-                                  type="button"
-                                  onClick={() => generateInvoicePDF(inv, business)}
-                                  className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-150/15 text-indigo-700 hover:text-indigo-950 font-extrabold rounded-lg text-[10px] uppercase tracking-wide transition flex items-center gap-1 border border-indigo-100 cursor-pointer"
-                                  title="Download custom-designed PDF receipt directly"
-                                >
-                                  <FileText className="w-3.5 h-3.5 text-indigo-500" /> Export PDF
-                                </button>
-                              )}
-                              {business && (
-                                <button
-                                  type="button"
-                                  onClick={() => setPreviewingInvoice(inv)}
-                                  className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-850 hover:text-amber-950 font-extrabold rounded-lg text-[10px] uppercase tracking-wide transition flex items-center gap-1 border border-amber-500/15 cursor-pointer"
-                                  title="Verify branding & live high-fidelity PDF preview"
-                                >
-                                  <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" /> Verify Branding
-                                </button>
-                              )}
-                              {onEditInvoice && (
-                                <button
-                                  type="button"
-                                  onClick={() => startEditInvoice(inv)}
-                                  className="p-1.5 text-gray-400 hover:text-[#00A6FF] hover:bg-blue-50 rounded-lg transition"
-                                  title="Edit entry details"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {onDeleteInvoice && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (confirm(`Are you sure you wish to void transaction ledger reference "${inv.id}"?`)) {
-                                      onDeleteInvoice(inv.id);
-                                    }
-                                  }}
-                                  className="p-1.5 text-gray-300 hover:text-[#D32F2F] hover:bg-red-50 rounded-lg transition"
-                                  title="Void registry command"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </>
+                            <p className="font-extrabold text-gray-900">{inv.customerName}</p>
                           )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
+                        </td>
+                        <td className="py-3 px-4 font-normal text-gray-600 truncate max-w-[150px]" title={inv.productName}>
+                          {isEditing ? (
+                            <input 
+                              type="text"
+                              value={editProdName}
+                              onChange={(e) => setEditProdName(e.target.value)}
+                              className="w-full text-xs p-1.5 border border-gray-200 focus:ring-1 focus:ring-[#00A6FF] rounded bg-white text-gray-800"
+                            />
+                          ) : (
+                            inv.productName
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          {isEditing ? (
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-100 px-2 py-0.5 rounded">Editing</span>
+                          ) : (
+                            getStatusBadge(inv)
+                          )}
+                        </td>
+                        <td className="py-3 px-4 font-normal text-gray-600 text-[10px] text-center font-mono">
+                          {inv.staffName || 'Owner'}
+                        </td>
+                        <td className="py-3 px-4 text-right font-extrabold font-mono text-gray-800 text-[11px]">
+                          {isEditing ? (
+                            <input 
+                              type="number"
+                              value={editTotalAmount}
+                              onChange={(e) => setEditTotalAmount(e.target.value)}
+                              className="w-24 text-xs font-bold font-mono text-right p-1.5 border border-gray-200 focus:ring-1 focus:ring-[#00A6FF] rounded bg-white text-gray-800"
+                            />
+                          ) : (
+                            <>₦{(inv.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold font-mono text-emerald-700 text-[11px]">
+                          {isEditing ? (
+                            <input 
+                              type="number"
+                              value={editAmountPaid}
+                              onChange={(e) => setEditAmountPaid(e.target.value)}
+                              className="w-24 text-xs font-bold font-mono text-right p-1.5 border border-gray-200 focus:ring-1 focus:ring-[#00A6FF] rounded bg-white text-gray-800"
+                            />
+                          ) : (
+                            <>₦{(inv.amountPaid || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</>
+                          )}
+                        </td>
+                        <td className="py-3 px-6 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {isEditing ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveInvoiceEditLocal(inv.id)}
+                                  className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition"
+                                  title="Save changes"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingInvoiceId(null)}
+                                  className="p-1.5 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-lg transition"
+                                  title="Abort changes"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => onSelectInvoice(inv)}
+                                  className="px-2.5 py-1 bg-gray-50 hover:bg-[#00A6FF]/10 text-gray-750 hover:text-[#0E1338] hover:border-[#00A6FF]/20 border border-gray-200 font-bold rounded-lg text-[10px] uppercase tracking-wide transition flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Eye className="w-3.5 h-3.5" /> View
+                                </button>
+                                {business && (
+                                  <button
+                                    type="button"
+                                    onClick={() => generateInvoicePDF(inv, business)}
+                                    className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-150/15 text-indigo-700 hover:text-indigo-950 font-extrabold rounded-lg text-[10px] uppercase tracking-wide transition flex items-center gap-1 border border-indigo-100 cursor-pointer"
+                                    title="Download custom-designed PDF receipt directly"
+                                  >
+                                    <FileText className="w-3.5 h-3.5 text-indigo-500" /> Export PDF
+                                  </button>
+                                )}
+                                {business && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewingInvoice(inv)}
+                                    className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-850 hover:text-amber-950 font-extrabold rounded-lg text-[10px] uppercase tracking-wide transition flex items-center gap-1 border border-amber-500/15 cursor-pointer"
+                                    title="Verify branding & live high-fidelity PDF preview"
+                                  >
+                                    <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" /> Verify Branding
+                                  </button>
+                                )}
+                                {onEditInvoice && (
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditInvoice(inv)}
+                                    className="p-1.5 text-gray-400 hover:text-[#00A6FF] hover:bg-blue-50 rounded-lg transition"
+                                    title="Edit entry details"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {onDeleteInvoice && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (confirm(`Are you sure you wish to void transaction ledger reference "${inv.id}"?`)) {
+                                        onDeleteInvoice(inv.id);
+                                      }
+                                    }}
+                                    className="p-1.5 text-gray-300 hover:text-[#D32F2F] hover:bg-red-50 rounded-lg transition"
+                                    title="Void registry command"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="bg-gray-100 font-bold border-t-2 border-gray-200">
+                    <td colSpan={6} className="py-3 px-6 text-right text-gray-700">Totals (Filtered)</td>
+                    <td className="py-3 px-4 text-right font-mono text-[11px] text-gray-900">₦{filteredSummary.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td className="py-3 px-4 text-right font-mono text-[11px] text-gray-900">₦{filteredSummary.totalDebt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td></td>
+                  </tr>
+                </>
+              )
+            }
             </tbody>
           </table>
         </div>

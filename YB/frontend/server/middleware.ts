@@ -105,3 +105,16 @@ export const requireSession = (req: Request, res: Response, next: NextFunction) 
     }
 };
 
+export const checkSubscription = (req: Request, res: Response, next: NextFunction) => {
+    const user_id = (req as any).user_id;
+    if (!user_id) return res.status(401).json({ error: "Unauthorized" });
+
+    const db = readDB();
+    const user = db.users.find((u: any) => u.id === user_id);
+    if (!user || user.subscriptionStatus !== 'active') {
+        return res.status(403).json({ error: "Subscription required for this feature" });
+    }
+
+    next();
+};
+

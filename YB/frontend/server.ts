@@ -4,11 +4,13 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import Paystack from 'paystack';
 import { anomalyDetectionMiddleware, requireSession, getApproxRegion } from "./server/middleware";
 import { readDB, writeDB } from "./server/db";
 
 dotenv.config();
 
+const paystack = Paystack(process.env.PAYSTACK_SECRET_KEY || '');
 const app = express();
 const PORT = 3000;
 
@@ -147,6 +149,14 @@ app.post("/api/auth/whatsapp-webhook", (req, res) => {
         const user = db.users.find((u: any) => normalizeContact(u.phone_or_email) === normalizeContact(verification.phone));
         if (user) {
             user.isVerified = true;
+            // Automatically clear suspicious locks for this user's active sessions too
+            if (db.merchantSessions) {
+                db.merchantSessions.forEach((s: any) => {
+                    if (s.user_id === user.id) {
+                        s.is_suspicious_locked = false;
+                    }
+                });
+            }
         }
 
         writeDB(db);
@@ -441,7 +451,9 @@ app.post("/api/auth/validate-session", requireSession, (req, res) => {
             phone: user.phone || user.phone_or_email,
             address: user.address || '',
             shop_slug: user.shop_slug || '',
-            business: user.business || null
+            business: user.business || null,
+            subscriptionPlan: user.subscriptionPlan || 'starter',
+            subscriptionStatus: user.subscriptionStatus || 'active'
         } : null
     });
 });
@@ -461,7 +473,25 @@ app.post("/api/auth/verify-suspicious-otp", (req, res) => {
         return res.status(401).json({ error: "Invalid security session context." });
     }
     
+    const user = db.users.find((u: any) => u.id === session.user_id);
+    const userPhone = user ? user.phone_or_email : '';
+
+    let isOtpValid = false;
     if (otp === '1234') {
+        isOtpValid = true;
+    } else if (otp && userPhone) {
+        const verification = (db.whatsappVerifications || []).find(
+            (v: any) => normalizeContact(v.phone) === normalizeContact(userPhone) && 
+                       v.code === otp && 
+                       v.expiresAt > Date.now()
+        );
+        if (verification) {
+            verification.status = 'verified';
+            isOtpValid = true;
+        }
+    }
+    
+    if (isOtpValid) {
         session.is_suspicious_locked = false;
         session.device_fingerprint = deviceFingerprint;
         session.last_active_region = approxRegion;
@@ -469,12 +499,98 @@ app.post("/api/auth/verify-suspicious-otp", (req, res) => {
         writeDB(db);
         res.json({ status: "success", message: "OTP Verification complete. Suspicious block cleared." });
     } else {
-        res.status(401).json({ error: "Invalid 4-digit lock verification OTP." });
+        res.status(401).json({ error: "Invalid verification code. Use 1234 or dynamic WhatsApp code." });
     }
 });
 
 app.post("/api/auth/logout", (req, res) => {
     res.json({ status: "success" });
+});
+
+app.post("/api/payment/initialize", requireSession, async (req, res) => {
+    try {
+        const { plan, amount, email } = req.body;
+        
+        const hasKey = process.env.PAYSTACK_SECRET_KEY && 
+                        process.env.PAYSTACK_SECRET_KEY !== 'MY_PAYSTACK_SECRET_KEY' &&
+                        process.env.PAYSTACK_SECRET_KEY.trim() !== '' &&
+                        !process.env.PAYSTACK_SECRET_KEY.includes('PLACEholder');
+                        
+        if (!hasKey) {
+            // Simulator mode when Paystack key is not available
+            const simRef = `sim_ref_${Math.random().toString(36).substring(2, 10)}`;
+            return res.json({
+                status: true,
+                message: "Simulator Auth URL Created",
+                data: {
+                    authorization_url: "SIMULATOR",
+                    reference: simRef,
+                    access_code: `sim_code_${Math.random().toString(36).substring(2, 10)}`
+                }
+            });
+        }
+
+        const reqOrigin = req.get('origin') || `${req.protocol}://${req.get('host')}`;
+        const callbackRaw = process.env.APP_URL && process.env.APP_URL !== "MY_APP_URL" ? process.env.APP_URL : reqOrigin;
+        const callbackUrl = `${callbackRaw.replace(/\/$/, '')}/dashboard`;
+
+        const response = await paystack.transaction.initialize({
+            amount: Math.round(amount * 100), // Paystack uses kobo
+            email,
+            callback_url: callbackUrl
+        });
+        res.json(response);
+    } catch (err: any) {
+        console.error("Paystack initialization error:", err);
+        res.status(500).json({ error: "Failed to initialize payment" });
+    }
+});
+
+app.post("/api/payment/verify", requireSession, async (req, res) => {
+    try {
+        const { reference, plan } = req.body;
+        
+        if (reference && reference.startsWith('sim_ref_')) {
+            // Verify simulator payment immediately
+            const user_id = (req as any).user_id;
+            const db = readDB();
+            const user = db.users.find((u: any) => u.id === user_id);
+            if (user) {
+                user.subscriptionPlan = plan;
+                user.subscriptionStatus = 'active';
+                writeDB(db);
+            }
+            return res.json({ status: "success", plan, is_simulated: true });
+        }
+
+        const hasKey = process.env.PAYSTACK_SECRET_KEY && 
+                        process.env.PAYSTACK_SECRET_KEY !== 'MY_PAYSTACK_SECRET_KEY' &&
+                        process.env.PAYSTACK_SECRET_KEY.trim() !== '' &&
+                        !process.env.PAYSTACK_SECRET_KEY.includes('PLACEholder');
+
+        if (!hasKey) {
+            return res.status(400).json({ error: "No Paystack key set, and reference is not simulated." });
+        }
+
+        const response = await paystack.transaction.verify(reference);
+        if (response.status === 'success' || (response.data && response.data.status === 'success') || response.message === 'Verification successful') {
+            // Update user subscription
+            const user_id = (req as any).user_id;
+            const db = readDB();
+            const user = db.users.find((u: any) => u.id === user_id);
+            if (user) {
+                user.subscriptionPlan = plan;
+                user.subscriptionStatus = 'active';
+                writeDB(db);
+            }
+            res.json({ status: "success", plan });
+        } else {
+            res.status(400).json({ error: "Payment verification failed" });
+        }
+    } catch (err: any) {
+        console.error("Paystack verification error:", err);
+        res.status(500).json({ error: "Failed to verify payment" });
+    }
 });
 
 app.delete("/api/auth/delete-account", requireSession, (req, res) => {

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, FormEvent, useRef } from 'react';
+import { motion } from 'motion/react';
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import StaffManagement from './components/StaffManagement';
 import StaffActivityLog from './components/StaffActivityLog';
@@ -23,6 +24,7 @@ import BackupManager from './components/BackupManager';
 import PWAInstallHelper from './components/PWAInstallHelper';
 import DjangoAdminController from './components/DjangoAdminController';
 import OnboardingSummary from './components/OnboardingSummary';
+import PricingGrid from './components/PricingGrid';
 import CloseAccountCard from './components/CloseAccountCard';
 import InteractiveTour from './components/InteractiveTour';
 import { formatNaira } from './utils/currency';
@@ -65,6 +67,7 @@ import {
 } from 'lucide-react';
 import { DashboardQuickActions } from './components/DashboardQuickActions';
 import { SyncNotificationChip } from './components/SyncNotificationChip';
+import LowStockAlert from './components/LowStockAlert';
 
 export default function App() {
   // Temporary session unlock on load
@@ -82,6 +85,12 @@ export default function App() {
   const [simulatedDeviceFp, setSimulatedDeviceFp] = useState('fp_default_owner');
   const [isSuspiciousLocked, setIsSuspiciousLocked] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
+
+  // Suspicious device lock security States
+  const [sessionRefreshTrigger, setSessionRefreshTrigger] = useState(0);
+  const [suspiciousOtp, setSuspiciousOtp] = useState('');
+  const [suspiciousOtpError, setSuspiciousOtpError] = useState<string | null>(null);
+  const [suspiciousOtpLoading, setSuspiciousOtpLoading] = useState(false);
 
   useEffect(() => {
     const setFp = async () => {
@@ -197,6 +206,8 @@ export default function App() {
                   ? `${parsedStaff.name_slug} @ ${data.user.business_name || data.user.phone_or_email}`
                   : (data.user.full_name || data.user.phone_or_email),
                 ownerPin: storedRole === 'cashier' ? '' : data.user.owner_pin,
+                subscriptionPlan: data.user.subscriptionPlan || 'starter',
+                subscriptionStatus: data.user.subscriptionStatus || 'active',
                 business: {
                   ...prev.business!,
                   ...b,
@@ -207,7 +218,22 @@ export default function App() {
                 }
               }));
               const saved = localStorage.getItem('active_screen');
-              if (!saved || ['landing', 'login'].includes(saved)) {
+              const pendingUpgradeStr = localStorage.getItem('pending_upgrade_plan');
+              if (pendingUpgradeStr) {
+                try {
+                  const pendingObj = JSON.parse(pendingUpgradeStr);
+                  localStorage.removeItem('pending_upgrade_plan');
+                  setActiveScreen('dashboard');
+                  setTimeout(() => {
+                    handleUpgradePlan(pendingObj.name, pendingObj.billingCycle, pendingObj.amount);
+                  }, 500);
+                } catch (err) {
+                  console.error(err);
+                  if (!saved || ['landing', 'login'].includes(saved)) {
+                    setActiveScreen('dashboard');
+                  }
+                }
+              } else if (!saved || ['landing', 'login'].includes(saved)) {
                 setActiveScreen('dashboard');
               }
             } else {
@@ -280,7 +306,123 @@ export default function App() {
     if (deviceFingerprint) {
       validateLocalSession();
     }
-  }, [deviceFingerprint, simulatedDeviceFp, simulatedLocation]);
+  }, [deviceFingerprint, simulatedDeviceFp, simulatedLocation, sessionRefreshTrigger]);
+
+  const [suspiciousWaCode, setSuspiciousWaCode] = useState<string | null>(null);
+  const [suspiciousWaLoading, setSuspiciousWaLoading] = useState(false);
+
+  // Dynamic Polling for Suspicious Locked session automatic unlock
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    if (isSuspiciousLocked) {
+      interval = setInterval(async () => {
+        const storedSession = localStorage.getItem('session_id');
+        if (storedSession) {
+          try {
+            const res = await nodeFetch('/api/auth/validate-session', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-session-id': storedSession,
+                'x-device-fingerprint': deviceFingerprint || simulatedDeviceFp || 'unknown_fp',
+                'x-approx-region': simulatedLocation || 'NG-Lagos'
+              },
+              body: JSON.stringify({ session_id: storedSession })
+            });
+            const data = await res.json();
+            if (res.ok && data && !data.is_suspicious_locked) {
+              setIsSuspiciousLocked(false);
+              setSessionRefreshTrigger(prev => prev + 1);
+              alert("🔒 Security bypass completed via dynamic WhatsApp authentication!");
+            }
+          } catch (err) {
+            console.warn("Polling validate-session skipped:", err);
+          }
+        }
+      }, 3000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isSuspiciousLocked, deviceFingerprint, simulatedDeviceFp, simulatedLocation]);
+
+  const handleSendSuspiciousWa = async () => {
+    setSuspiciousWaLoading(true);
+    setSuspiciousOtpError(null);
+    try {
+      const contactVal = userState.email || userState.business?.phone || localStorage.getItem('authorized_phone_or_email') || '';
+      if (!contactVal) {
+        setSuspiciousOtpError("No merchant contact details found to send verification code. Try manual Sim PIN '1234'.");
+        return;
+      }
+
+      const res = await nodeFetch('/api/auth/probe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-device-fingerprint': deviceFingerprint || simulatedDeviceFp || 'unknown_fp',
+          'x-approx-region': simulatedLocation || 'NG-Lagos'
+        },
+        body: JSON.stringify({ phone_or_email: contactVal })
+      });
+      if (!res.ok) throw new Error("Could not connect to authentication gateway");
+      const data = await res.json();
+      if (data.verificationCode) {
+        setSuspiciousWaCode(data.verificationCode);
+        const waLink = `https://wa.me/2348028416553?text=Verify%20my%20Yeedem%20account%20code:%20${data.verificationCode}`;
+        window.open(waLink, '_blank');
+      } else {
+        throw new Error("No verification code received");
+      }
+    } catch (err: any) {
+      setSuspiciousOtpError(err.message || "Failed to initiate WhatsApp verification code.");
+    } finally {
+      setSuspiciousWaLoading(false);
+    }
+  };
+
+  const handleVerifySuspiciousOtp = async (e?: FormEvent) => {
+    if (e) e.preventDefault();
+    if (suspiciousOtp.length !== 4 && suspiciousOtp.length !== 6) {
+      setSuspiciousOtpError("Please enter either the 4-digit Demo PIN or the 6-digit WhatsApp code");
+      return;
+    }
+
+    setSuspiciousOtpLoading(true);
+    setSuspiciousOtpError(null);
+
+    try {
+      const storedSession = localStorage.getItem('session_id') || '';
+      const response = await nodeFetch('/api/auth/verify-suspicious-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-device-fingerprint': deviceFingerprint || simulatedDeviceFp || 'unknown_fp',
+          'x-approx-region': simulatedLocation || 'NG-Lagos'
+        },
+        body: JSON.stringify({
+          session_id: storedSession,
+          otp: suspiciousOtp
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok && data.status === 'success') {
+        setIsSuspiciousLocked(false);
+        setSuspiciousOtp('');
+        // Re-authenticate / revalidate session instantly to unlock and load metrics
+        setSessionRefreshTrigger(prev => prev + 1);
+        alert("🔒 Verification successful! Dynamic security session unlocked.");
+      } else {
+        setSuspiciousOtpError(data.error || "Verification failed. Please check the OTP.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setSuspiciousOtpError("Network connection timeout. Failed to clear security lock.");
+    } finally {
+      setSuspiciousOtpLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
     await apiFetch('/api/auth/logout', { method: 'POST' });
@@ -376,6 +518,178 @@ export default function App() {
     alert("🎉 Master Purge Complete!\n\nYour account and all associated cloud backups have been permanently deleted from Yeedem servers, and all local browser cookies and storage profiles are completely wiped. You can now register as a brand new merchant.");
   };
 
+  // Paystack payment integration state managers
+  const [activePaymentPlan, setActivePaymentPlan] = useState<{ name: string; billingCycle: 'monthly' | 'annually'; amount: number } | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'initializing' | 'waiting_payment' | 'verifying' | 'success' | 'error'>('idle');
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [paymentReference, setPaymentReference] = useState<string | null>(null);
+  const [paymentAuthUrl, setPaymentAuthUrl] = useState<string | null>(null);
+
+  const handleUpgradePlan = async (plan: string, billingCycle: 'monthly' | 'annually' = 'monthly', amount: number = 0) => {
+    console.log('handleUpgradePlan called with:', plan, billingCycle, amount);
+
+    // 1. Check if user is authenticated
+    if (!userState.authenticated) {
+      alert(`🔑 Authentication Required\n\nYou must log in or register a merchant account on Yeedem Books to purchase the ${plan} plan. Your selection has been saved, and you will be returned to checkout immediately after logging in.`);
+      
+      // Save pending plan to localStorage so we keep their intent
+      localStorage.setItem('pending_upgrade_plan', JSON.stringify({ name: plan, billingCycle, amount }));
+      setActiveScreen('login');
+      return;
+    }
+
+    // If it's the SME Basic (Free) plan, upgrade immediately without payment
+    if (amount === 0) {
+      setPaymentStatus('verifying');
+      try {
+        const storedSession = localStorage.getItem('session_id');
+        const res = await nodeFetch('/api/payment/verify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-session-id': storedSession || ''
+          },
+          body: JSON.stringify({ reference: 'sim_ref_free_plan_' + Math.random().toString(36).substring(2, 8), plan })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+          setUserState(prev => ({
+             ...prev,
+             subscriptionPlan: plan,
+             subscriptionStatus: 'active'
+          }));
+          setPaymentStatus('success');
+          setActivePaymentPlan({ name: plan, billingCycle, amount });
+          alert(`Successfully updated your workspace to ${plan}!`);
+        } else {
+          throw new Error(data.error || "Failed to free upgrade");
+        }
+      } catch (err: any) {
+        setPaymentStatus('error');
+        setPaymentError(err.message || "Upgrade failed");
+      }
+      return;
+    }
+
+    // 2. Clear previous payment states and open payment loader
+    setActivePaymentPlan({ name: plan, billingCycle, amount });
+    setPaymentStatus('initializing');
+    setPaymentError(null);
+    setPaymentReference(null);
+    setPaymentAuthUrl(null);
+
+    // 3. Initiate checkout session with Express server backend
+    try {
+      const storedSession = localStorage.getItem('session_id');
+      const initRes = await nodeFetch('/api/payment/initialize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': storedSession || ''
+        },
+        body: JSON.stringify({ 
+          plan, 
+          amount, 
+          email: userState.email || 'customer@yeedem.com' 
+        })
+      });
+
+      if (!initRes.ok) {
+        const errData = await initRes.json();
+        throw new Error(errData.error || "Failed to initialize secure Paystack payment");
+      }
+
+      const initData = await initRes.json();
+      if (initData.status && initData.data) {
+        const { authorization_url, reference } = initData.data;
+        setPaymentReference(reference);
+        setPaymentAuthUrl(authorization_url);
+        setPaymentStatus('waiting_payment');
+
+        // Open transaction portal
+        if (authorization_url === 'SIMULATOR') {
+          console.log("Paystack set in Simulator Mode.");
+        } else {
+          window.open(authorization_url, '_blank');
+        }
+      } else {
+        throw new Error("Invalid initialization response from server");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setPaymentStatus('error');
+      setPaymentError(err.message || 'Error occurred during Paystack initiation');
+    }
+  };
+
+  // Verifying actual payment with backend
+  const verifyPaystackPayment = async () => {
+    if (!paymentReference || !activePaymentPlan) return;
+    setPaymentStatus('verifying');
+    setPaymentError(null);
+
+    try {
+      const storedSession = localStorage.getItem('session_id');
+      const verRes = await nodeFetch('/api/payment/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': storedSession || ''
+        },
+        body: JSON.stringify({ 
+          reference: paymentReference, 
+          plan: activePaymentPlan.name 
+        })
+      });
+
+      const verData = await verRes.json();
+      if (verRes.ok && verData.status === 'success') {
+        setUserState(prev => ({
+          ...prev,
+          subscriptionPlan: activePaymentPlan.name,
+          subscriptionStatus: 'active'
+        }));
+        setPaymentStatus('success');
+      } else {
+        throw new Error(verData.error || 'Payment verification could not be completed successfully.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setPaymentStatus('error');
+      setPaymentError(err.message || 'Error occurred verifying payment standard');
+    }
+  };
+
+  const cancelPaystackPayment = () => {
+    setActivePaymentPlan(null);
+    setPaymentStatus('idle');
+    setPaymentError(null);
+    setPaymentReference(null);
+    setPaymentAuthUrl(null);
+  };
+
+  // Polling effect for checking payment completion
+  useEffect(() => {
+    if (paymentStatus !== 'waiting_payment' || !paymentReference) return;
+
+    let pollInterval: any;
+    
+    // If simulator mode, auto-verify after 4 seconds to lead users through mock integration beautifully!
+    if (paymentAuthUrl === 'SIMULATOR') {
+      pollInterval = setTimeout(() => {
+        verifyPaystackPayment();
+      }, 4000);
+      return () => clearTimeout(pollInterval);
+    }
+
+    // For real Paystack payments, poll every 5 seconds
+    pollInterval = setInterval(() => {
+      verifyPaystackPayment();
+    }, 5000);
+
+    return () => clearInterval(pollInterval);
+  }, [paymentStatus, paymentReference, paymentAuthUrl]);
+
   const [customers, setCustomers] = useState<Customer[]>([]);
 
   // Inventory list state tracking
@@ -401,7 +715,7 @@ export default function App() {
     };
   }, []);
 
-  const [activeScreen, setActiveScreen] = useState<'landing' | 'login' | 'about' | 'terms' | 'guest_invoice' | 'dashboard' | 'debtors' | 'profile' | 'invoice_preview' | 'products' | 'invoices' | 'customers' | 'terminal'>(() => {
+  const [activeScreen, setActiveScreen] = useState<'landing' | 'login' | 'about' | 'terms' | 'guest_invoice' | 'dashboard' | 'debtors' | 'profile' | 'invoice_preview' | 'products' | 'invoices' | 'customers' | 'terminal' | 'pricing'>(() => {
     if (window.location.pathname.startsWith('/terminal/')) {
       return 'terminal';
     }
@@ -413,7 +727,7 @@ export default function App() {
     if (screenParam) return screenParam;
 
     const saved = localStorage.getItem('active_screen') as any;
-    const validScreens = ['landing', 'login', 'about', 'terms', 'guest_invoice', 'dashboard', 'debtors', 'profile', 'invoice_preview', 'products', 'invoices', 'customers', 'terminal'];
+    const validScreens = ['landing', 'login', 'about', 'terms', 'guest_invoice', 'dashboard', 'debtors', 'profile', 'invoice_preview', 'products', 'invoices', 'customers', 'terminal', 'pricing'];
     if (saved && validScreens.includes(saved)) {
       if (saved === 'terminal') return 'landing';
       return saved;
@@ -705,6 +1019,61 @@ export default function App() {
   // Dynamic Product Edit States
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [inventoryTab, setInventoryTab] = useState<'catalog' | 'history'>('catalog');
+  const [catalogFilter, setCatalogFilter] = useState<'all' | 'low' | 'out'>('all');
+  const [isCustomizingDashboard, setIsCustomizingDashboard] = useState(false);
+  const [dashboardKPIs, setDashboardKPIs] = useState<Array<{ id: string; label: string; visible: boolean }>>(() => {
+    const saved = localStorage.getItem('dashboard_kpis_custom');
+    return saved ? JSON.parse(saved) : [
+      { id: 'collected', label: 'Total Collected', visible: true },
+      { id: 'debt', label: 'Pending Debt', visible: true },
+      { id: 'profit', label: 'Real Net Profit', visible: true },
+    ];
+  });
+  const [dashboardWidgets, setDashboardWidgets] = useState<Array<{ id: string; label: string; visible: boolean; description: string }>>(() => {
+    const saved = localStorage.getItem('dashboard_widgets_custom');
+    return saved ? JSON.parse(saved) : [
+      { id: 'ai_widget', label: 'AI Voice & Text Invoice Widget', visible: true, description: 'Natural language parsing interface' },
+      { id: 'pulse', label: 'Daily Pulse Metric Section', visible: true, description: 'Real-time daily cash ledger & credit tracker' },
+      { id: 'trend_chart', label: '7-Days Sales Volume Trend Chart', visible: true, description: 'Line graph tracking invoices vs payments' },
+      { id: 'profit_chart', label: '30-Days Net Profit Trend Chart', visible: true, description: 'Area graph displaying net profit margins' },
+      { id: 'logs', label: 'Recent Transaction Logs', visible: true, description: 'Recent trade records and receipts layout' },
+    ];
+  });
+
+  const moveKPI = (index: number, direction: 'up' | 'down') => {
+    const newKPIs = [...dashboardKPIs];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= newKPIs.length) return;
+    const temp = newKPIs[index];
+    newKPIs[index] = newKPIs[targetIndex];
+    newKPIs[targetIndex] = temp;
+    setDashboardKPIs(newKPIs);
+    localStorage.setItem('dashboard_kpis_custom', JSON.stringify(newKPIs));
+  };
+
+  const moveWidget = (index: number, direction: 'up' | 'down') => {
+    const newWidgets = [...dashboardWidgets];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= newWidgets.length) return;
+    const temp = newWidgets[index];
+    newWidgets[index] = newWidgets[targetIndex];
+    newWidgets[targetIndex] = temp;
+    setDashboardWidgets(newWidgets);
+    localStorage.setItem('dashboard_widgets_custom', JSON.stringify(newWidgets));
+  };
+
+  const toggleKPIVisibility = (id: string) => {
+    const newKPIs = dashboardKPIs.map(k => k.id === id ? { ...k, visible: !k.visible } : k);
+    setDashboardKPIs(newKPIs);
+    localStorage.setItem('dashboard_kpis_custom', JSON.stringify(newKPIs));
+  };
+
+  const toggleWidgetVisibility = (id: string) => {
+    const newWidgets = dashboardWidgets.map(w => w.id === id ? { ...w, visible: !w.visible } : w);
+    setDashboardWidgets(newWidgets);
+    localStorage.setItem('dashboard_widgets_custom', JSON.stringify(newWidgets));
+  };
+
   const [showWholesaleCosts, setShowWholesaleCosts] = useState(false);
   const [showTax, setShowTax] = useState(false);
   const [isInvoiceExpanded, setIsInvoiceExpanded] = useState(false);
@@ -1200,6 +1569,8 @@ export default function App() {
         setUserState(prev => ({
           ...prev,
           onboarded: true,
+          subscriptionPlan: 'Free Plan',
+          subscriptionStatus: 'active',
           business: {
             ...prev.business!,
             ...b,
@@ -1218,6 +1589,13 @@ export default function App() {
     }
   };
 
+  const getInvoiceLimit = (plan?: string) => {
+    if (!plan) return 10;
+    if (plan.includes('pro') || plan.includes('enterprise')) return 999999;
+    if (plan.includes('starter')) return 100;
+    return 10;
+  };
+
   const saveInvoice = (parsedInvoice: {
     customerName: string;
     productName: string;
@@ -1227,6 +1605,14 @@ export default function App() {
     debtBalance: number;
     transactionType: 'sale' | 'expense' | 'payment_on_account';
   }) => {
+    const limit = getInvoiceLimit(userState.subscriptionPlan);
+    const totalInvoices = customers.reduce((acc, c) => acc + (c.invoices?.length || 0), 0);
+    
+    if (totalInvoices >= limit) {
+      alert(`You have reached the limit of ${limit} invoices for your ${userState.subscriptionPlan || 'Free'} plan. Please upgrade to create more invoices.`);
+      return;
+    }
+
     const matchName = parsedInvoice.customerName || "Walk-in Customer";
     const amountVal = parsedInvoice.totalAmount || 0;
     const paidVal = parsedInvoice.amountPaid || 0;
@@ -1241,7 +1627,8 @@ export default function App() {
       amountPaid: paidVal,
       debtBalance: debtVal,
       transactionType: parsedInvoice.transactionType,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      staffName: userState.username
     };
 
     // Subduct sold commodities from standard catalog stocks if matched!
@@ -1833,6 +2220,8 @@ export default function App() {
         email: userObj.phone_or_email || phone_or_email || '',
         username: userObj.full_name || userObj.phone_or_email || '',
         ownerPin: userObj.owner_pin,
+        subscriptionPlan: userObj.subscriptionPlan || 'starter',
+        subscriptionStatus: userObj.subscriptionStatus || 'active',
         business: {
           ...prev.business!,
           ...b,
@@ -1853,7 +2242,23 @@ export default function App() {
     } else {
       setUserState(prev => ({ ...prev, authenticated: true, onboarded: true }));
     }
-    setActiveScreen('dashboard');
+
+    const pendingUpgradeStr = localStorage.getItem('pending_upgrade_plan');
+    if (pendingUpgradeStr) {
+      try {
+        const pendingObj = JSON.parse(pendingUpgradeStr);
+        localStorage.removeItem('pending_upgrade_plan');
+        setActiveScreen('dashboard');
+        setTimeout(() => {
+          handleUpgradePlan(pendingObj.name, pendingObj.billingCycle, pendingObj.amount);
+        }, 500);
+      } catch (err) {
+        console.error("Error parsing pending upgrade plan:", err);
+        setActiveScreen('dashboard');
+      }
+    } else {
+      setActiveScreen('dashboard');
+    }
   };
 
   const handleStaffLogin = (session_id: string, staffObj: any, userObj: any) => {
@@ -1875,6 +2280,8 @@ export default function App() {
         email: userObj.phone_or_email || '',
         username: `${staffObj.name_slug} @ ${userObj.business_name || userObj.phone_or_email}`,
         ownerPin: '', // Avoid exposing owner master pin to clerk
+        subscriptionPlan: userObj.subscriptionPlan || 'starter',
+        subscriptionStatus: userObj.subscriptionStatus || 'active',
         business: {
           ...prev.business!,
           ...b,
@@ -2780,11 +3187,11 @@ export default function App() {
       )}
 
       {/* Main Layout Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
+      <main className="flex-1 max-w-screen-2xl w-full mx-auto px-6 py-8">
         
         {/* PUBLIC GUEST VIEWPORTS */}
         {activeScreen === 'landing' && (
-          <LandingPage onNavigate={setActiveScreen} />
+          <LandingPage onNavigate={setActiveScreen} onUpgrade={handleUpgradePlan} />
         )}
 
         {activeScreen === 'about' && (
@@ -2804,6 +3211,14 @@ export default function App() {
           />
         )}
 
+        {activeScreen === 'pricing' && (
+          <PricingGrid 
+            onNavigate={(screen) => setActiveScreen(screen as any)} 
+            onUpgrade={handleUpgradePlan}
+            currentPlan={userState.subscriptionPlan}
+          />
+        )}
+
         {activeScreen === 'login' && (
           <div className="max-w-md mx-auto py-8">
             <LoginScreen 
@@ -2817,278 +3232,300 @@ export default function App() {
 
         {/* DASHBOARD VIEWPORT */}
         {activeScreen === 'dashboard' && (
-          <div className="space-y-8 animate-fadeIn">
-            
-            {/* Instant multimodaly parsed Smart widget */}
-            <DashboardQuickActions metrics={calculatedMetrics} />
-            <div id="tour-smart-widget">
-              <SmartWidget onSaveParsedInvoice={saveInvoice} isService={isService} />
-            </div>
-            
-            {/* Today's Daily Pulse Section */}
-            <div id="tour-daily-pulse" className="text-gray-900 rounded-[24px] p-6 relative overflow-hidden bg-white shadow-sm border border-gray-100">
-              <div className="absolute right-0 top-0 opacity-10 transform translate-x-12 -translate-y-8 select-none pointer-events-none">
-                <TrendingUp className="w-64 h-64 text-gray-300" />
-              </div>
-              
-              <div className="relative z-10">
-                <div className="flex items-center justify-between gap-4 border-b border-gray-100 pb-4">
-                  <div>
-                    <span className="px-2.5 py-0.5 bg-[#00A6FF]/10 text-[#00A6FF] rounded-full text-[10px] font-extrabold uppercase tracking-wide">Daily Pulse Feed</span>
-                    <h2 className="text-md sm:text-lg font-bold font-sans mt-1">Real-Time Business Metrics</h2>
-                  </div>
-                  {currentUserRole === 'cashier' && (
-                    <span className="text-[10px] bg-amber-500/10 text-amber-600 font-extrabold px-2.5 py-1 rounded-lg uppercase tracking-wider">
-                      Clerking shift active
-                    </span>
-                  )}
-                </div>
+          <div className="space-y-6 animate-fadeIn">
+            {/* Render KPI Stats Cards in Customizable Sequence */}
+            <DashboardQuickActions metrics={calculatedMetrics} kpisPref={dashboardKPIs} />
 
-                {/* Today's Stats grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
-                  {!isService ? (
-                    <>
-                      <div className="bg-gray-50 rounded-2xl p-4">
-                        <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider font-mono">Today's Cash Ledger</span>
-                        <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
-                          {formatNaira(todayMetrics.cashCollectedToday)}
-                        </p>
-                        <p className="text-[9px] text-gray-500 font-mono mt-0.5">Cleared accounts & direct payments</p>
-                      </div>
-
-                      <div className="bg-gray-50 rounded-2xl p-4">
-                        <span className="text-[10px] uppercase font-bold text-red-600 tracking-wider font-mono font-sans font-bold">Today's Credit Owed</span>
-                        <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
-                          {formatNaira(todayMetrics.debtIssuedToday)}
-                        </p>
-                        <p className="text-[9px] text-gray-500 font-mono mt-0.5">Added to client outstanding notebooks</p>
-                      </div>
-
-                      <div className="bg-gray-50 rounded-2xl p-4">
-                        <span className="text-[10px] uppercase font-bold text-[#00A6FF] tracking-wider font-mono">Est. Profit Margin</span>
-                        <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
-                          {formatNaira(todayMetrics.estimatedProfitToday)}
-                        </p>
-                        <p className="text-[9px] text-gray-500 font-mono mt-0.5">Based on selling price & purchase unit cost</p>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="bg-gray-50 rounded-2xl p-4">
-                        <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider font-mono">Total Service Revenue</span>
-                        <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
-                          {formatNaira(todayMetrics.cashCollectedToday)}
-                        </p>
-                        <p className="text-[9px] text-gray-500 font-mono mt-0.5">Total earnings from completed services</p>
-                      </div>
-
-                      <div className="bg-gray-50 rounded-2xl p-4">
-                        <span className="text-[10px] uppercase font-bold text-amber-600 tracking-wider font-mono font-sans font-bold">Active Bookings/Jobs</span>
-                        <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
-                          {recentInvoices.filter(inv => inv.debtBalance > 0).length}
-                        </p>
-                        <p className="text-[9px] text-gray-500 font-mono mt-0.5">Projects currently in progress</p>
-                      </div>
-                      
-                      <div className="bg-gray-50 rounded-2xl p-4">
-                        <span className="text-[10px] uppercase font-bold text-blue-600 tracking-wider font-mono">Total Outstanding</span>
-                        <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
-                          {formatNaira(calculatedMetrics.outstandingTotal)}
-                        </p>
-                        <p className="text-[9px] text-gray-500 font-mono mt-0.5">Total uncollected service fees</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
+            {/* Persistent Essential Stock Alarm alerts */}
+            <LowStockAlert products={products} onRestock={(id) => {
+              setActiveScreen('products');
+              handleRestockProduct(id, 15);
+            }} />
 
             {/* Smart interaction layouts columns */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              {/* Multimodal workspace widget container taking 12 span */}
-              <div className="lg:col-span-12 space-y-8">
+              {/* Left Column for Customizable widgets */}
+              <div className="lg:col-span-9 space-y-8">
+                {dashboardWidgets.map(widget => {
+                if (!widget.visible) return null;
 
-
-
-                {/* Recharts 7 Days Sales Volume Trend */}
-                <div className="bg-white rounded-[24px] p-6 shadow-sm">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 border-b pb-3 border-gray-100">
-                    <div>
-                      <h3 className="font-display font-semibold text-xs uppercase tracking-wider text-[#0E1338]">Last 7 Days Sales Trend Volume</h3>
-                      <p className="text-[10px] text-gray-400 font-mono mt-0.5">Comparative visual overview of cumulative invoicing vs quick cash volume</p>
-                    </div>
-                    <div className="flex items-center gap-3 text-[10px] font-bold font-sans self-start sm:self-auto">
-                      <div className="flex items-center gap-1">
-                        <span className="w-2.5 h-2.5 rounded bg-[#00A6FF] block"></span>
-                        <span className="text-gray-500">Invoice Sums</span>
+                switch (widget.id) {
+                  case 'ai_widget':
+                    return (
+                      <div key="ai_widget" id="tour-smart-widget" className="animate-scaleIn w-full">
+                        <SmartWidget onSaveParsedInvoice={saveInvoice} isService={isService} />
                       </div>
-                      <div className="flex items-center gap-1">
-                        <span className="w-2.5 h-2.5 rounded bg-emerald-500 block"></span>
-                        <span className="text-gray-500">Payments</span>
+                    );
+
+                  case 'pulse':
+                    return (
+                      <div key="pulse" id="tour-daily-pulse" className="text-gray-900 rounded-[24px] p-6 relative overflow-hidden bg-white shadow-sm border border-gray-100 animate-scaleIn w-full">
+                        <div className="absolute right-0 top-0 opacity-10 transform translate-x-12 -translate-y-8 select-none pointer-events-none">
+                          <TrendingUp className="w-64 h-64 text-gray-300" />
+                        </div>
+                        
+                        <div className="relative z-10">
+                          <div className="flex items-center justify-between gap-4 border-b border-gray-100 pb-4">
+                            <div>
+                              <span className="px-2.5 py-0.5 bg-[#00A6FF]/10 text-[#00A6FF] rounded-full text-[10px] font-extrabold uppercase tracking-wide">Daily Pulse Feed</span>
+                              <h2 className="text-md sm:text-lg font-bold font-sans mt-1">Real-Time Business Metrics</h2>
+                            </div>
+                            {currentUserRole === 'cashier' && (
+                              <span className="text-[10px] bg-amber-500/10 text-amber-600 font-extrabold px-2.5 py-1 rounded-lg uppercase tracking-wider">
+                                Clerking shift active
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Today's Stats grid */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+                            {!isService ? (
+                              <>
+                                <div className="bg-gray-50 rounded-2xl p-4">
+                                  <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider font-mono">Today's Cash Ledger</span>
+                                  <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
+                                    {formatNaira(todayMetrics.cashCollectedToday)}
+                                  </p>
+                                  <p className="text-[9px] text-gray-500 font-mono mt-0.5">Cleared accounts & direct payments</p>
+                                </div>
+
+                                <div className="bg-gray-50 rounded-2xl p-4">
+                                  <span className="text-[10px] uppercase font-bold text-red-600 tracking-wider font-mono font-sans font-bold">Today's Credit Owed</span>
+                                  <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
+                                    {formatNaira(todayMetrics.debtIssuedToday)}
+                                  </p>
+                                  <p className="text-[9px] text-gray-500 font-mono mt-0.5">Added to client outstanding notebooks</p>
+                                </div>
+
+                                <div className="bg-gray-50 rounded-2xl p-4">
+                                  <span className="text-[10px] uppercase font-bold text-[#00A6FF] tracking-wider font-mono">Est. Profit Margin</span>
+                                  <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
+                                    {formatNaira(todayMetrics.estimatedProfitToday)}
+                                  </p>
+                                  <p className="text-[9px] text-gray-500 font-mono mt-0.5">Based on selling price & purchase unit cost</p>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="bg-gray-50 rounded-2xl p-4">
+                                  <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider font-mono">Total Service Revenue</span>
+                                  <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
+                                    {formatNaira(todayMetrics.cashCollectedToday)}
+                                  </p>
+                                  <p className="text-[9px] text-gray-500 font-mono mt-0.5">Total earnings from completed services</p>
+                                </div>
+
+                                <div className="bg-gray-50 rounded-2xl p-4">
+                                  <span className="text-[10px] uppercase font-bold text-amber-600 tracking-wider font-mono font-sans font-bold">Active Bookings/Jobs</span>
+                                  <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
+                                    {recentInvoices.filter(inv => inv.debtBalance > 0).length}
+                                  </p>
+                                  <p className="text-[9px] text-gray-500 font-mono mt-0.5">Projects currently in progress</p>
+                                </div>
+                                
+                                <div className="bg-gray-50 rounded-2xl p-4">
+                                  <span className="text-[10px] uppercase font-bold text-blue-600 tracking-wider font-mono">Total Outstanding</span>
+                                  <p className="text-lg font-extrabold font-sans text-gray-900 mt-1">
+                                    {formatNaira(calculatedMetrics.outstandingTotal)}
+                                  </p>
+                                  <p className="text-[9px] text-gray-500 font-mono mt-0.5">Total uncollected service fees</p>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                  
-                  <div className="h-60 w-full text-xs font-mono">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={salesTrendData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-                        <XAxis 
-                          dataKey="label" 
-                          stroke="#94A3B8" 
-                          fontSize={9} 
-                          tickLine={false} 
-                          axisLine={false} 
-                          dy={5}
-                        />
-                        <YAxis 
-                          stroke="#94A3B8" 
-                          fontSize={9} 
-                          tickLine={false} 
-                          axisLine={false} 
-                          tickFormatter={(val) => `₦${val >= 1000 ? (val/1000) + 'k' : val}`}
-                        />
-                        <Tooltip 
-                          contentStyle={{ backgroundColor: '#0E1338', border: 'none', borderRadius: '14px', color: '#fff', fontSize: '11px' }}
-                          formatter={(value: any) => [`₦${value.toLocaleString(undefined, { minimumFractionDigits: 1 })}`, '']}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="sales" 
-                          stroke="#00A6FF" 
-                          strokeWidth={3} 
-                          dot={{ r: 4 }} 
-                          activeDot={{ r: 6 }} 
-                          name="Invoice Sums" 
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="cash" 
-                          stroke="#10B981" 
-                          strokeWidth={2.5} 
-                          strokeDasharray="4 4" 
-                          dot={{ r: 3 }} 
-                          name="Payments" 
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
+                    );
 
-                {/* Recharts 30 Days True Net Profit Trend */}
-                <div id="tour-net-profit-chart" className="bg-white rounded-[24px] p-6 shadow-sm">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 border-b pb-3 border-gray-100">
-                    <div>
-                      <h3 className="font-display font-semibold text-xs uppercase tracking-wider text-[#0E1338]">30 Days True Net Profit Trend</h3>
-                      <p className="text-[10px] text-gray-400 font-mono mt-0.5">Calculated from sales less original wholesales unit costs & business debit items</p>
-                    </div>
-                    <div className="flex items-center gap-3 text-[10px] font-bold font-sans self-start sm:self-auto">
-                      <div className="flex items-center gap-1">
-                        <span className="w-2.5 h-2.5 rounded bg-[#10B981] block"></span>
-                        <span className="text-gray-500">True Net Profit</span>
+                  case 'trend_chart':
+                    return (
+                      <div key="trend_chart" className="bg-white rounded-[24px] p-6 shadow-sm animate-scaleIn w-full">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 border-b pb-3 border-gray-100">
+                          <div>
+                            <h3 className="font-display font-semibold text-xs uppercase tracking-wider text-[#0E1338]">Last 7 Days Sales Trend Volume</h3>
+                            <p className="text-[10px] text-gray-400 font-mono mt-0.5">Comparative visual overview of cumulative invoicing vs quick cash volume</p>
+                          </div>
+                          <div className="flex items-center gap-3 text-[10px] font-bold font-sans self-start sm:self-auto">
+                            <div className="flex items-center gap-1">
+                              <span className="w-2.5 h-2.5 rounded bg-[#00A6FF] block"></span>
+                              <span className="text-gray-500">Invoice Sums</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="w-2.5 h-2.5 rounded bg-[#10B981] block"></span>
+                              <span className="text-gray-500">Payments</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="h-60 w-full text-xs font-mono">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={salesTrendData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                              <XAxis 
+                                dataKey="label" 
+                                stroke="#94A3B8" 
+                                fontSize={9} 
+                                tickLine={false} 
+                                axisLine={false} 
+                                dy={5}
+                              />
+                              <YAxis 
+                                stroke="#94A3B8" 
+                                fontSize={9} 
+                                tickLine={false} 
+                                axisLine={false} 
+                                tickFormatter={(val) => `₦${val >= 1000 ? (val/1000) + 'k' : val}`}
+                              />
+                              <Tooltip 
+                                contentStyle={{ backgroundColor: '#0E1338', border: 'none', borderRadius: '14px', color: '#fff', fontSize: '11px' }}
+                                formatter={(value: any) => [`₦${value.toLocaleString(undefined, { minimumFractionDigits: 1 })}`, '']}
+                              />
+                              <Line 
+                                type="monotone" 
+                                dataKey="sales" 
+                                stroke="#00A6FF" 
+                                strokeWidth={3} 
+                                dot={{ r: 4 }} 
+                                activeDot={{ r: 6 }} 
+                                name="Invoice Sums" 
+                              />
+                              <Line 
+                                type="monotone" 
+                                dataKey="cash" 
+                                stroke="#10B981" 
+                                strokeWidth={2.5} 
+                                strokeDasharray="4 4" 
+                                dot={{ r: 3 }} 
+                                name="Payments" 
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                  
-                  <div className="h-60 w-full text-xs font-mono">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={netProfit30DaysData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#10B981" stopOpacity={0.25}/>
-                            <stop offset="95%" stopColor="#10B981" stopOpacity={0.01}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-                        <XAxis 
-                          dataKey="label" 
-                          stroke="#94A3B8" 
-                          fontSize={9} 
-                          tickLine={false} 
-                          axisLine={false} 
-                          dy={5}
-                        />
-                        <YAxis 
-                          stroke="#94A3B8" 
-                          fontSize={9} 
-                          tickLine={false} 
-                          axisLine={false} 
-                          tickFormatter={(val) => `₦${val >= 1000 ? (val/1000) + 'k' : val}`}
-                        />
-                        <Tooltip 
-                          contentStyle={{ backgroundColor: '#0E1338', border: 'none', borderRadius: '14px', color: '#fff', fontSize: '11px' }}
-                          formatter={(value: any) => [`₦${value.toLocaleString(undefined, { minimumFractionDigits: 1 })}`, 'True Net Profit']}
-                        />
-                        <Area 
-                          type="monotone" 
-                          dataKey="profit" 
-                          stroke="#10B981" 
-                          strokeWidth={3} 
-                          fillOpacity={1}
-                          fill="url(#colorProfit)"
-                          dot={{ r: 2 }} 
-                          activeDot={{ r: 5 }} 
-                          name="True Net Profit" 
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
+                    );
 
-                {/* Recent transaction log listings table */}
-                <div className="bg-white rounded-[24px] p-6 shadow-sm">
-                  <h2 className="font-display font-semibold text-sm uppercase tracking-wider text-[#0E1338] mb-4 border-b pb-2">Recent {isService ? 'Service' : 'SME'} Transaction logs</h2>
-                  <div className="overflow-x-auto text-xs text-gray-750">
-                    <table className="w-full text-left font-sans">
-                      <thead>
-                        <tr className="border-b font-semibold text-gray-400 uppercase tracking-wide text-[10px]">
-                          <th className="py-2.5">Date</th>
-                          <th className="py-2.5">Billed Debtor</th>
-                          <th className="py-2.5">{isService ? 'Service Rendered' : 'Commodity Items'}</th>
-                          <th className="py-2.5 text-right">Invoice Sum</th>
-                          <th className="py-2.5 text-right">Owed Credit</th>
-                          <th className="py-2.5 text-center">Receipt Layout</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recentInvoices.length === 0 ? (
-                          <tr>
-                            <td colSpan={6} className="py-6 text-center text-gray-400 italic">No ledger registrations logged. Record your first trade with the AI widget above!</td>
-                          </tr>
-                        ) : (
-                          recentInvoices.map((inv) => (
-                            <tr key={inv.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition duration-150">
-                              <td className="py-3 font-mono text-gray-400">{new Date(inv.createdAt).toLocaleDateString()}</td>
-                              <td className="py-3 font-semibold text-gray-800">{inv.customerName}</td>
-                              <td className="py-3 text-gray-500">{inv.productName}</td>
-                              <td className="py-3 text-right font-semibold font-mono">₦{inv.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                              <td className="py-3 text-right font-bold font-mono text-[#D32F2F]">
-                                {inv.debtBalance > 0 ? `₦${inv.debtBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}` : 'Settled'}
-                              </td>
-                              <td className="py-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedInvoice(inv);
-                                    setActiveScreen('invoice_preview');
-                                  }}
-                                  className="px-2.5 py-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 font-semibold rounded text-[10px]"
-                                >
-                                  View Receipt
-                                </button>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                  case 'profit_chart':
+                    return (
+                      <div key="profit_chart" id="tour-net-profit-chart" className="bg-white rounded-[24px] p-6 shadow-sm animate-scaleIn w-full">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 border-b pb-3 border-gray-100">
+                          <div>
+                            <h3 className="font-display font-semibold text-xs uppercase tracking-wider text-[#0E1338]">30 Days True Net Profit Trend</h3>
+                            <p className="text-[10px] text-gray-400 font-mono mt-0.5">Calculated from sales less original wholesales unit costs & business debit items</p>
+                          </div>
+                          <div className="flex items-center gap-3 text-[10px] font-bold font-sans self-start sm:self-auto">
+                            <div className="flex items-center gap-1">
+                              <span className="w-2.5 h-2.5 rounded bg-[#10B981] block"></span>
+                              <span className="text-gray-500">True Net Profit</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="h-60 w-full text-xs font-mono">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={netProfit30DaysData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                              <defs>
+                                <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.25}/>
+                                  <stop offset="95%" stopColor="#10B981" stopOpacity={0.01}/>
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                              <XAxis 
+                                dataKey="label" 
+                                stroke="#94A3B8" 
+                                fontSize={9} 
+                                tickLine={false} 
+                                axisLine={false} 
+                                dy={5}
+                              />
+                              <YAxis 
+                                stroke="#94A3B8" 
+                                fontSize={9} 
+                                tickLine={false} 
+                                axisLine={false} 
+                                tickFormatter={(val) => `₦${val >= 1000 ? (val/1000) + 'k' : val}`}
+                              />
+                              <Tooltip 
+                                contentStyle={{ backgroundColor: '#0E1338', border: 'none', borderRadius: '14px', color: '#fff', fontSize: '11px' }}
+                                formatter={(value: any) => [`₦${value.toLocaleString(undefined, { minimumFractionDigits: 1 })}`, 'True Net Profit']}
+                              />
+                              <Area 
+                                type="monotone" 
+                                dataKey="profit" 
+                                stroke="#10B981" 
+                                strokeWidth={3} 
+                                fillOpacity={1}
+                                fill="url(#colorProfit)"
+                                dot={{ r: 2 }} 
+                                activeDot={{ r: 5 }} 
+                                name="True Net Profit" 
+                              />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    );
 
+                  case 'logs':
+                    return (
+                      <div key="logs" className="bg-white rounded-[24px] p-6 shadow-sm animate-scaleIn w-full">
+                        <h2 className="font-display font-semibold text-sm uppercase tracking-wider text-[#0E1338] mb-4 border-b pb-2">Recent {isService ? 'Service' : 'SME'} Transaction logs</h2>
+                        <div className="overflow-x-auto text-xs text-gray-750 w-full">
+                          <table className="w-full text-left font-sans">
+                            <thead>
+                              <tr className="border-b font-semibold text-gray-400 uppercase tracking-wide text-[10px]">
+                                <th className="py-2.5">Date</th>
+                                <th className="py-2.5">Billed Debtor</th>
+                                <th className="py-2.5">{isService ? 'Service Rendered' : 'Commodity Items'}</th>
+                                <th className="py-2.5 text-right">Invoice Sum</th>
+                                <th className="py-2.5 text-right">Owed Credit</th>
+                                <th className="py-2.5 text-center">Receipt Layout</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {recentInvoices.length === 0 ? (
+                                <tr>
+                                  <td colSpan={6} className="py-6 text-center text-gray-400 italic">No ledger registrations logged. Record your first trade with the AI widget above!</td>
+                                </tr>
+                              ) : (
+                                recentInvoices.map((inv) => (
+                                  <tr key={inv.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition duration-150">
+                                    <td className="py-3 font-mono text-gray-400">{new Date(inv.createdAt).toLocaleDateString()}</td>
+                                    <td className="py-3 font-semibold text-gray-800">{inv.customerName}</td>
+                                    <td className="py-3 text-gray-500">{inv.productName}</td>
+                                    <td className="py-3 text-right font-semibold font-mono">₦{inv.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                                    <td className="py-3 text-right font-bold font-mono text-[#D32F2F]">
+                                      {inv.debtBalance > 0 ? `₦${inv.debtBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}` : 'Settled'}
+                                    </td>
+                                    <td className="py-3 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedInvoice(inv);
+                                          setActiveScreen('invoice_preview');
+                                        }}
+                                        className="px-2.5 py-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 font-semibold rounded text-[10px]"
+                                      >
+                                        View Receipt
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+
+                  default:
+                    return null;
+                }
+              })}
               </div>
 
               {/* Side bar layout helper tips info taking 4 span */}
-              <div className="lg:col-span-4 space-y-8">
+              <div className="lg:col-span-3 space-y-8">
                 
                 {!isService && (
                   <>
@@ -3380,6 +3817,45 @@ export default function App() {
                 
                 {inventoryTab === 'catalog' ? (
                   <div className="overflow-x-auto text-xs animate-fadeIn">
+                    {/* Catalog Filter Buttons */}
+                    {!isService && (
+                      <div className="flex flex-wrap gap-2 mb-4 bg-gray-50 border border-gray-150 p-2.5 rounded-2xl">
+                        <button
+                          type="button"
+                          onClick={() => setCatalogFilter('all')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                            catalogFilter === 'all'
+                              ? 'bg-[#00A6FF] text-white shadow-sm'
+                              : 'bg-white text-gray-500 hover:text-gray-900 shadow-xs border border-gray-200'
+                          }`}
+                        >
+                          📦 All Items ({products.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCatalogFilter('low')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                            catalogFilter === 'low'
+                              ? 'bg-amber-500 text-white shadow-sm font-extrabold'
+                              : 'bg-white text-amber-600 hover:text-amber-800 shadow-xs border border-amber-100'
+                          }`}
+                        >
+                          ⚠️ Low Stock Warn ({products.filter(p => p.stock <= p.minQuantityCount && p.stock > 0).length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCatalogFilter('out')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                            catalogFilter === 'out'
+                              ? 'bg-red-500 text-white shadow-sm font-extrabold'
+                              : 'bg-white text-red-650 hover:text-red-850 shadow-xs border border-red-100'
+                          }`}
+                        >
+                          🚫 Out of Stock ({products.filter(p => p.stock === 0).length})
+                        </button>
+                      </div>
+                    )}
+
                     <table className="w-full text-left font-sans">
                     <thead>
                       <tr className="border-b text-gray-400 uppercase font-bold text-[10px]">
@@ -3393,150 +3869,173 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {products.map(p => {
-                        const isLow = p.stock <= p.minQuantityCount;
-                        const isEditing = editingProductId === p.id;
-                        return (
-                          <tr key={p.id} className={`border-b border-gray-50 transition duration-150 py-3 ${isEditing ? 'bg-blue-50/20' : 'hover:bg-gray-50/50'}`}>
-                            <td className="py-3.5 font-mono text-gray-400 uppercase font-semibold">
-                              {isEditing ? (
-                                <input 
-                                  type="text"
-                                  value={editProdSku}
-                                  onChange={(e) => setEditProdSku(e.target.value)}
-                                  className="w-24 px-2 py-1 text-xs font-mono rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-1 focus:ring-[#00A6FF] uppercase font-bold"
-                                  placeholder="SKU"
-                                />
-                              ) : (
-                                p.sku
+                      {(() => {
+                        const filtered = products.filter(p => {
+                          if (isService) return true;
+                          if (catalogFilter === 'low') return p.stock <= p.minQuantityCount && p.stock > 0;
+                          if (catalogFilter === 'out') return p.stock === 0;
+                          return true;
+                        });
+
+                        if (filtered.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={8} className="py-12 text-center text-gray-500 italic">
+                                No items found matching the selected filter ({catalogFilter}).
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return filtered.map(p => {
+                          const isLow = p.stock <= p.minQuantityCount;
+                          const isEditing = editingProductId === p.id;
+                          return (
+                            <tr key={p.id} className={`border-b border-gray-50 transition duration-150 py-3 ${isEditing ? 'bg-blue-50/20' : 'hover:bg-gray-50/50'}`}>
+                              <td className="py-3.5 font-mono text-gray-400 uppercase font-semibold">
+                                {isEditing ? (
+                                  <input 
+                                    type="text"
+                                    value={editProdSku}
+                                    onChange={(e) => setEditProdSku(e.target.value)}
+                                    className="w-24 px-2 py-1 text-xs font-mono rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-1 focus:ring-[#00A6FF] uppercase font-bold"
+                                    placeholder="SKU"
+                                  />
+                                ) : (
+                                  p.sku
+                                )}
+                              </td>
+                              <td className="py-3.5 font-bold text-gray-900">
+                                {isEditing ? (
+                                  <input 
+                                    type="text"
+                                    value={editProdName}
+                                    onChange={(e) => setEditProdName(e.target.value)}
+                                    className="w-full p-1 text-xs font-bold rounded border border-gray-200 bg-white"
+                                  />
+                                ) : (
+                                  p.name
+                                )}
+                              </td>
+                              {!isService && (
+                                <td className="py-3.5 text-center font-bold font-mono text-sm">
+                                  {isEditing ? (
+                                    <input 
+                                      type="number"
+                                      value={editProdStock}
+                                      onChange={(e) => setEditProdStock(e.target.value)}
+                                      className="w-16 p-1 text-center font-bold text-xs rounded border border-gray-200 bg-white"
+                                    />
+                                  ) : (
+                                    p.stock
+                                  )}
+                                </td>
                               )}
-                            </td>
-                            <td className="py-3.5 font-bold text-gray-900">
-                              {isEditing ? (
-                                <input 
-                                  type="text"
-                                  value={editProdName}
-                                  onChange={(e) => setEditProdName(e.target.value)}
-                                  className="w-full p-1 text-xs font-bold rounded border border-gray-200 bg-white"
-                                />
-                              ) : (
-                                p.name
+                              {!isService && showWholesaleCosts && (currentUserRole === 'owner' || staffPermissions?.allow_view_costs) && (
+                                <td className="py-3.5 text-right font-mono font-semibold text-indigo-500">
+                                  {isEditing ? (
+                                    <input 
+                                      type="number"
+                                      value={editProdCostPrice}
+                                      onChange={(e) => setEditProdCostPrice(e.target.value)}
+                                      className="w-20 p-1 text-right font-semibold text-xs rounded border border-indigo-200 bg-indigo-50 text-indigo-700"
+                                      placeholder="Cost"
+                                    />
+                                  ) : (
+                                    <>{formatNaira(p.cost_price || 0)}</>
+                                  )}
+                                </td>
                               )}
-                            </td>
-                            {!isService && (
-                              <td className="py-3.5 text-center font-bold font-mono text-sm">
+                              <td className="py-3.5 text-right font-mono font-semibold">
                                 {isEditing ? (
                                   <input 
                                     type="number"
-                                    value={editProdStock}
-                                    onChange={(e) => setEditProdStock(e.target.value)}
-                                    className="w-16 p-1 text-center font-bold text-xs rounded border border-gray-200 bg-white"
+                                    value={editProdPrice}
+                                    onChange={(e) => setEditProdPrice(e.target.value)}
+                                    className="w-20 p-1 text-right font-semibold text-xs rounded border border-gray-200 bg-white"
                                   />
                                 ) : (
-                                  p.stock
+                                  <>{formatNaira(p.price)}</>
                                 )}
                               </td>
-                            )}
-                            {!isService && showWholesaleCosts && (currentUserRole === 'owner' || staffPermissions?.allow_view_costs) && (
-                              <td className="py-3.5 text-right font-mono font-semibold text-indigo-500">
+                              <td className="py-3.5 text-center">
                                 {isEditing ? (
-                                  <input 
-                                    type="number"
-                                    value={editProdCostPrice}
-                                    onChange={(e) => setEditProdCostPrice(e.target.value)}
-                                    className="w-20 p-1 text-right font-semibold text-xs rounded border border-indigo-200 bg-indigo-50 text-indigo-700"
-                                    placeholder="Cost"
-                                  />
+                                  <span className="text-[9px] font-bold text-gray-400 uppercase bg-gray-100 px-2 py-1 rounded-full">Editing</span>
+                                ) : isService ? (
+                                  <span className="bg-[#00A6FF]/10 text-[#00A6FF] font-bold text-[9px] px-2 py-1 rounded-full border border-[#00A6FF]/25 inline-block">
+                                    Active Offering
+                                  </span>
+                                ) : p.stock === 0 ? (
+                                  <span className="bg-red-50 text-red-650 font-bold text-[9px] px-2 py-1 rounded-full border border-red-200 inline-block">
+                                    🚫 Out of Stock
+                                  </span>
+                                ) : isLow ? (
+                                  <span className="bg-amber-50 text-amber-700 font-bold text-[9px] px-2 py-1 rounded-full border border-amber-150 inline-block animate-pulse">
+                                    ⚠️ Low Stock Warn
+                                  </span>
                                 ) : (
-                                  <>{formatNaira(p.cost_price || 0)}</>
+                                  <span className="bg-emerald-50 text-emerald-800 font-bold text-[9px] px-2 py-1 rounded-full border border-emerald-150 inline-block">
+                                    Optimized
+                                  </span>
                                 )}
                               </td>
-                            )}
-                            <td className="py-3.5 text-right font-mono font-semibold">
-                              {isEditing ? (
-                                <input 
-                                  type="number"
-                                  value={editProdPrice}
-                                  onChange={(e) => setEditProdPrice(e.target.value)}
-                                  className="w-20 p-1 text-right font-semibold text-xs rounded border border-gray-200 bg-white"
-                                />
-                              ) : (
-                                <>{formatNaira(p.price)}</>
-                              )}
-                            </td>
-                            <td className="py-3.5 text-center">
-                              {isEditing ? (
-                                <span className="text-[9px] font-bold text-gray-400 uppercase bg-gray-100 px-2 py-1 rounded-full">Editing</span>
-                              ) : isService ? (
-                                <span className="bg-[#00A6FF]/10 text-[#00A6FF] font-bold text-[9px] px-2 py-1 rounded-full border border-[#00A6FF]/25 inline-block">
-                                  Active Offering
-                                </span>
-                              ) : isLow ? (
-                                <span className="bg-red-50 text-[#D32F2F] font-bold text-[9px] px-2 py-1 rounded-full border border-red-150 inline-block animate-pulse">
-                                  ⚠️ Low Stock Warn
-                                </span>
-                              ) : (
-                                <span className="bg-emerald-50 text-emerald-800 font-bold text-[9px] px-2 py-1 rounded-full border border-emerald-150 inline-block">
-                                  Optimized
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-3.5 text-right">
-                              <div className="flex items-center justify-end gap-1.5">
-                                {currentUserRole === 'cashier' && !staffPermissions?.allow_manage_products ? (
-                                  <span className="text-[10px] text-gray-400 italic">Read-only terminal</span>
-                                ) : isEditing ? (
-                                  <>
-                                    <button
-                                      onClick={() => handleSaveProductEdit(p.id)}
-                                      className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition"
-                                      title="Save stock levels"
-                                    >
-                                      <Check className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      onClick={() => setEditingProductId(null)}
-                                      className="p-1.5 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-lg transition"
-                                      title="Abort stock edit"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
-                                  </>
-                                ) : (
-                                  <>
-                                    <button
-                                      onClick={() => startEditProduct(p)}
-                                      className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg transition"
-                                      title="Edit details"
-                                    >
-                                      <Edit2 className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleRestockProduct(p.id, 5)}
-                                      className="px-2 py-1 bg-[#00A6FF]/10 text-[#00A6FF] rounded text-[10px] font-extrabold hover:bg-[#00A6FF]/20"
-                                    >
-                                      +5 Stock
-                                    </button>
-                                    <button
-                                      onClick={() => handleRestockProduct(p.id, 20)}
-                                      className="px-2 py-1 bg-[#0E1338]/10 text-[#0E1338] rounded text-[10px] font-extrabold hover:bg-[#0E1338]/20"
-                                    >
-                                      +20 Bulk
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteProduct(p.id)}
-                                      className="p-1.5 text-gray-300 hover:text-red-500 rounded-lg transition"
-                                      title="Delete Product"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                              <td className="py-3.5 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {currentUserRole === 'cashier' && !staffPermissions?.allow_manage_products ? (
+                                    <span className="text-[10px] text-gray-400 italic">Read-only terminal</span>
+                                  ) : isEditing ? (
+                                    <>
+                                      <button
+                                        onClick={() => handleSaveProductEdit(p.id)}
+                                        className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition"
+                                        title="Save stock levels"
+                                      >
+                                        <Check className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => setEditingProductId(null)}
+                                        className="p-1.5 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-lg transition"
+                                        title="Abort stock edit"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button
+                                        onClick={() => startEditProduct(p)}
+                                        className="p-1.5 bg-amber-50 hover:bg-amber-150 text-amber-900 rounded-lg transition"
+                                        title="Edit details"
+                                      >
+                                        <Edit2 className="w-1.5 h-3.5 opacity-80" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleRestockProduct(p.id, 5)}
+                                        className="px-2 py-1 bg-[#00A6FF]/10 text-[#00A6FF] rounded text-[10px] font-extrabold hover:bg-[#00A6FF]/20"
+                                      >
+                                        +5 Stock
+                                      </button>
+                                      <button
+                                        onClick={() => handleRestockProduct(p.id, 20)}
+                                        className="px-2 py-1 bg-[#0E1338]/10 text-[#0E1338] rounded text-[10px] font-extrabold hover:bg-[#0E1338]/20"
+                                      >
+                                        +20 Bulk
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteProduct(p.id)}
+                                        className="p-1.5 text-gray-300 hover:text-red-500 rounded-lg transition"
+                                        title="Delete Product"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
                     </tbody>
                   </table>
                 </div>
@@ -3656,6 +4155,183 @@ export default function App() {
                   ownerPin={userState.ownerPin} 
                 />
 
+                {/* Enterprise Control Desk Dashboard Layout Modifier */}
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 space-y-6">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+                    <div>
+                      <h2 className="text-md sm:text-lg font-display font-extrabold text-gray-900 flex items-center gap-2">
+                        💼 Enterprise Control Desk
+                      </h2>
+                      <p className="text-xs text-gray-500">Monitor active cash streams, trade ledgers, logs, and your customizable layout preferences.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomizingDashboard(!isCustomizingDashboard)}
+                      className={`text-xs px-4 py-2.5 rounded-2xl flex items-center gap-2 font-bold transition-all border ${
+                        isCustomizingDashboard
+                          ? 'bg-amber-100 text-amber-800 border-amber-300'
+                          : 'bg-[#0E1338] hover:bg-[#0E1338]/90 text-white shadow-sm border-transparent'
+                      }`}
+                    >
+                      ⚙️ {isCustomizingDashboard ? 'Close Layout Editor' : 'Customize Dashboard Layout'}
+                    </button>
+                  </div>
+
+                  {/* Customization Workspace Panel */}
+                  {isCustomizingDashboard && (
+                    <div className="bg-slate-900 text-white rounded-[24px] p-6 shadow-xl border border-slate-800 animate-fadeIn space-y-6">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                          <h3 className="text-sm font-bold font-sans text-amber-400">Live Workspace Layout Modifier</h3>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5">Toggle visibility and click arrow buttons below to customize, reorder, or dismiss stats and modules to align with your personal workflow choice on the main dashboard screen.</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-2">
+                        {/* KPI CARD CONTROLS */}
+                        <div className="space-y-4">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-white/10 pb-2">1. KPI Stats Cards Layout ({dashboardKPIs.filter(k => k.visible).length} visible)</h4>
+                          <div className="space-y-2">
+                            {dashboardKPIs.map((kpi, idx) => (
+                              <div key={kpi.id} className="flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/5">
+                                <div>
+                                  <span className="text-xs font-bold text-slate-200">{kpi.label}</span>
+                                  <span className="block text-[9px] text-slate-400">Dynamic score position: #{idx + 1}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleKPIVisibility(kpi.id)}
+                                    className={`px-2.5 py-1 text-[10px] font-extrabold rounded-lg transition-all ${
+                                      kpi.visible
+                                        ? 'bg-emerald-500 text-white'
+                                        : 'bg-white/10 text-slate-400 hover:bg-white/20'
+                                    }`}
+                                  >
+                                    {kpi.visible ? '👁️ Visible' : '🙈 Hidden'}
+                                  </button>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      disabled={idx === 0}
+                                      onClick={() => moveKPI(idx, 'up')}
+                                      className="p-1 px-2 rounded bg-white/10 text-slate-300 disabled:opacity-20 hover:bg-white/20 transition-all text-xs"
+                                    >
+                                      ↑
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={idx === dashboardKPIs.length - 1}
+                                      onClick={() => moveKPI(idx, 'down')}
+                                      className="p-1 px-2 rounded bg-white/10 text-slate-300 disabled:opacity-20 hover:bg-white/20 transition-all text-xs"
+                                    >
+                                      ↓
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* PORTAL WIDGET CONTROLS */}
+                        <div className="space-y-4">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-white/10 pb-2">2. Portal Widgets Arrangement ({dashboardWidgets.filter(w => w.visible).length} visible)</h4>
+                          <div className="space-y-2">
+                            {dashboardWidgets.map((widget, idx) => (
+                              <div key={widget.id} className="flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/5">
+                                <div>
+                                  <span className="text-xs font-bold text-slate-200">{widget.label}</span>
+                                  <span className="block text-[9px] text-slate-400">{widget.description}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleWidgetVisibility(widget.id)}
+                                    className={`px-2.5 py-1 text-[10px] font-extrabold rounded-lg transition-all ${
+                                      widget.visible
+                                        ? 'bg-emerald-500 text-white font-extrabold'
+                                        : 'bg-white/10 text-slate-400 hover:bg-white/20'
+                                    }`}
+                                  >
+                                    {widget.visible ? '👁️ Visible' : '🙈 Hidden'}
+                                  </button>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      disabled={idx === 0}
+                                      onClick={() => moveWidget(idx, 'up')}
+                                      className="p-1 px-2 rounded bg-white/10 text-slate-300 disabled:opacity-20 hover:bg-white/20 transition-all text-xs"
+                                    >
+                                      ↑
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={idx === dashboardWidgets.length - 1}
+                                      onClick={() => moveWidget(idx, 'down')}
+                                      className="p-1 px-2 rounded bg-white/10 text-slate-300 disabled:opacity-20 hover:bg-white/20 transition-all text-xs"
+                                    >
+                                      ↓
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {currentUserRole === 'owner' && (
+                  <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-100">
+                    <h3 className="font-display font-semibold text-gray-900 mb-4">Subscription Plan</h3>
+                    
+                    {/* Active Plan Detail */}
+                    <motion.div 
+                      animate={{ boxShadow: ['0 0 0 0 rgba(0, 166, 255, 0.4)', '0 0 0 10px rgba(0, 166, 255, 0)', '0 0 0 0 rgba(0, 166, 255, 0)'] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                      className="flex items-center justify-between gap-3 mb-6 bg-blue-50/30 p-4 rounded-xl border-2 border-[#00A6FF]/20"
+                    >
+                      <div>
+                        <div className="text-[10px] uppercase font-black tracking-widest text-[#00A6FF] mb-1">Your Active Plan</div>
+                        <div className="text-sm font-bold text-gray-800 capitalize">{userState.subscriptionPlan || 'SME Basic'}</div>
+                        <div className={`mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase inline-block ${userState.subscriptionStatus === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                          {userState.subscriptionStatus || 'Inactive'}
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => setActiveScreen('pricing')}
+                        className="px-4 py-2 bg-[#0E1338] text-white text-xs font-bold rounded-xl hover:bg-[#0E1338]/90"
+                      >
+                        Change / Upgrade Plan
+                      </button>
+                    </motion.div>
+
+                    <h3 className="font-display font-semibold text-gray-900 mb-4">Billing History</h3>
+                    <div className="space-y-3">
+                       {userState.billingHistory && userState.billingHistory.length > 0 ? (
+                         userState.billingHistory.map(invoice => (
+                           <div key={invoice.id} className="flex justify-between items-center text-xs border-b border-gray-50 pb-2">
+                             <div>
+                               <p className="font-bold text-gray-800">{invoice.plan} Plan</p>
+                               <p className="text-gray-400">{invoice.date}</p>
+                             </div>
+                             <div className="text-right">
+                               <p className="font-bold">₦{invoice.amount.toLocaleString()}</p>
+                               <p className={`capitalize ${invoice.status === 'paid' ? 'text-emerald-600' : 'text-red-500'}`}>{invoice.status}</p>
+                             </div>
+                           </div>
+                         ))
+                       ) : (
+                         <p className="text-xs text-gray-500">No payment history available.</p>
+                       )}
+                    </div>
+                  </div>
+                )}
+                
                 {userState.business && (
                   <InvoiceTemplateSettings 
                     business={userState.business} 
@@ -3674,6 +4350,7 @@ export default function App() {
                       products={products}
                       restockLogs={restockLogs}
                       userBusiness={userState.business}
+                      subscriptionPlan={currentUserRole === 'owner' ? userState.subscriptionPlan : undefined}
                       onRestoreBackup={handleRestoreBackup}
                       triggerBackupNow={() => triggerDailyAutomatedBackup(true)}
                     />
@@ -3926,6 +4603,334 @@ export default function App() {
         </div>
       )}
       {userState.authenticated && <SyncNotificationChip userEmail={userState.email} onSync={() => triggerDailyAutomatedBackup(true)} />}
+
+      {/* Paystack Checkout Portal Overlay */}
+      {paymentStatus !== 'idle' && activePaymentPlan && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[32px] w-full max-w-sm p-6 shadow-2xl border border-gray-100 flex flex-col space-y-4 animate-scaleIn">
+            
+            {/* Header */}
+            <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Secure Payment Portal</span>
+              </div>
+              {paymentStatus !== 'initializing' && paymentStatus !== 'verifying' && (
+                <button 
+                  onClick={cancelPaystackPayment}
+                  className="p-1 px-2.5 rounded-lg text-xs bg-gray-100 hover:bg-gray-200 text-gray-500 transition-all font-bold"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+
+            {/* Content states */}
+            {paymentStatus === 'initializing' && (
+              <div className="text-center py-6 space-y-4">
+                <div className="w-10 h-10 border-4 border-[#00A6FF] border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <div className="space-y-1">
+                  <p className="font-extrabold text-[#0E1338]">Initializing Paystack...</p>
+                  <p className="text-xs text-gray-400">Setting up secure encryption tunnels for ₦{(activePaymentPlan.amount).toLocaleString()}</p>
+                </div>
+              </div>
+            )}
+
+            {paymentStatus === 'waiting_payment' && (
+              <div className="space-y-4">
+                <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 flex items-start gap-3">
+                  <div className="bg-blue-100 p-2 rounded-lg text-blue-600 mt-0.5">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                  </div>
+                  <div>
+                    <h4 className="text-[10px] font-black text-blue-800 uppercase tracking-wide">Dynamic Checkout Opened</h4>
+                    <p className="text-gray-600 text-[11px] leading-relaxed mt-0.5">
+                      {paymentAuthUrl === 'SIMULATOR' 
+                        ? "Simulator Mode: Click 'Launch Simulator' to complete checkout."
+                        : "Paystack secure checkout has been launched in a new browser tab. Please enter your card details on Paystack."}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 space-y-3">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-gray-400 font-bold">Plan Type:</span>
+                    <span className="font-extrabold text-[#0E1338] bg-white px-3 py-1 rounded-full border border-gray-100">{activePaymentPlan.name} ({activePaymentPlan.billingCycle})</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-gray-400 font-bold">Total Billable:</span>
+                    <span className="font-black text-base text-[#00A6FF]">₦{(activePaymentPlan.amount).toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {paymentAuthUrl === 'SIMULATOR' ? (
+                    <button
+                      onClick={verifyPaystackPayment}
+                      className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-2.5 rounded-xl text-xs transition-all shadow-md active:scale-95"
+                    >
+                      🚀 Launch Simulator & Autocomplete
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={verifyPaystackPayment}
+                        className="w-full bg-[#00A6FF] hover:bg-[#0092E0] text-white font-black py-2.5 rounded-xl text-xs transition-all shadow-md active:scale-95"
+                      >
+                        ✨ Check Payment Status (Verify)
+                      </button>
+                      <button
+                        onClick={() => window.open(paymentAuthUrl || '', '_blank')}
+                        className="w-full bg-white hover:bg-gray-50 text-[#0E1338] border border-gray-200 font-extrabold py-2 rounded-xl text-xs transition-all active:scale-95"
+                      >
+                        🔗 Re-open Payment Checkout Link
+                      </button>
+                    </>
+                  )}
+
+                  {/* Dev Sandbox Bypass Feature: Activate premium plan instantly without payment */}
+                  <button
+                    onClick={async () => {
+                      const bypassRef = `sim_ref_bypass_${Math.random().toString(36).substring(2, 10)}`;
+                      setPaymentStatus('verifying');
+                      try {
+                        const storedSession = localStorage.getItem('session_id') || '';
+                        const res = await nodeFetch('/api/payment/verify', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'x-session-id': storedSession
+                          },
+                          body: JSON.stringify({
+                            reference: bypassRef,
+                            plan: activePaymentPlan.name
+                          })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.status === 'success') {
+                          setUserState(prev => ({
+                            ...prev,
+                            subscriptionPlan: activePaymentPlan.name,
+                            subscriptionStatus: 'active'
+                          }));
+                          setPaymentStatus('success');
+                          alert(`⚡ Demo Bypass Active! Your Workspace was instantly upgraded to ${activePaymentPlan.name}.`);
+                        } else {
+                          throw new Error(data.error || "Verification bypass failed");
+                        }
+                      } catch (err: any) {
+                        setPaymentStatus('error');
+                        setPaymentError(err.message || 'Demo bypass failed');
+                      }
+                    }}
+                    className="w-full bg-amber-500 hover:bg-amber-600 text-white font-black py-2.5 rounded-xl text-xs transition-all shadow-md active:scale-95 border border-amber-400"
+                  >
+                    ⚡ Trial Simulator: Live Active Without Paying
+                  </button>
+
+                  <button
+                    onClick={cancelPaystackPayment}
+                    className="w-full py-1 text-xs font-bold text-gray-400 hover:text-gray-600 transition"
+                  >
+                    Cancel transaction
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {paymentStatus === 'verifying' && (
+              <div className="text-center py-6 space-y-4">
+                <div className="w-10 h-10 border-4 border-[#00A6FF] border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <div className="space-y-1">
+                  <p className="font-extrabold text-[#0E1338]">Verifying secure token...</p>
+                  <p className="text-xs text-gray-400">Verifying bank ledger hashes for plan: {activePaymentPlan.name}</p>
+                </div>
+              </div>
+            )}
+
+            {paymentStatus === 'success' && (
+              <div className="text-center py-6 space-y-4">
+                <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-xl animate-bounce">
+                  🎉
+                </div>
+                <div className="space-y-1">
+                  <h3 className="font-black text-[#0E1338] text-sm">Subscription Active!</h3>
+                  <p className="text-[11px] text-gray-500 max-w-xs mx-auto">Your workspace has been successfully upgraded to the **{activePaymentPlan.name}** plan. Thank you for your support!</p>
+                </div>
+                <button
+                  onClick={() => {
+                    cancelPaystackPayment();
+                    setActiveScreen('dashboard');
+                  }}
+                  className="w-full bg-[#00A6FF] hover:bg-[#0092E0] text-white font-black py-2.5 rounded-xl text-xs transition shadow-md"
+                >
+                  Return to Dashboard
+                </button>
+              </div>
+            )}
+
+            {paymentStatus === 'error' && (
+              <div className="text-center py-6 space-y-4">
+                <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto text-lg font-bold">
+                  ⚠️
+                </div>
+                <div className="space-y-2">
+                  <h3 className="font-black text-[#0E1338] text-sm">Checkout Error</h3>
+                  <p className="text-xs text-rose-600 px-3 py-1.5 bg-rose-50 rounded-lg border border-rose-100">{paymentError}</p>
+                </div>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => handleUpgradePlan(activePaymentPlan.name, activePaymentPlan.billingCycle, activePaymentPlan.amount)}
+                    className="w-full bg-[#00A6FF] text-white font-black py-2.5 rounded-xl text-xs transition shadow-md"
+                  >
+                    Retry payment
+                  </button>
+                  <button
+                    onClick={cancelPaystackPayment}
+                    className="w-full py-1 text-xs font-bold text-gray-450 hover:text-gray-750 transition"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* SUSPICIOUS ACTIVITY OTP LOCK MODAL */}
+      {isSuspiciousLocked && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-[120] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[32px] w-full max-w-sm p-6 shadow-2xl border border-gray-100 flex flex-col space-y-4 animate-scaleIn">
+            
+            {/* Header */}
+            <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-[#0E1338]">Yeedem Security Guard</span>
+              </div>
+            </div>
+
+            {/* Lock Illustration and Message */}
+            <div className="text-center py-2 space-y-3">
+              <div className="w-14 h-14 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto text-2xl font-bold border border-rose-100 shadow-sm animate-pulse">
+                🔒
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-serif font-black text-lg text-[#0E1338]">Workspace Locked</h3>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  We detected a suspicious change in your client characteristics (device signature or primary operating region).
+                </p>
+              </div>
+            </div>
+
+            {/* Simulated verification help card */}
+            <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100 space-y-1.5 text-xs">
+              <p className="font-extrabold flex items-center gap-1.5 text-amber-900">
+                <span>🛡️</span> Security WhatsApp Access
+              </p>
+              <p className="leading-relaxed opacity-90 text-[11px] text-amber-800">
+                Choose to authenticate dynamically via WhatsApp or enter your primary credential PIN to clear the security geofence.
+              </p>
+              <p className="font-black text-[11px] pt-1 border-t border-amber-200/50 mt-1 text-amber-900 flex justify-between">
+                <span>💡 Simulated Demo PIN:</span>
+                <span className="underline font-mono font-bold">1234</span>
+              </p>
+            </div>
+
+            {/* WhatsApp dispatch / code section */}
+            <div className="space-y-2">
+              {!suspiciousWaCode ? (
+                <button
+                  type="button"
+                  onClick={handleSendSuspiciousWa}
+                  disabled={suspiciousWaLoading}
+                  className="w-full bg-[#25D366] hover:bg-[#20ba5a] text-white font-black py-2.5 rounded-xl text-xs transition duration-200 shadow-sm flex items-center justify-center gap-2"
+                >
+                  {suspiciousWaLoading ? (
+                    <span className="w-4.5 h-4.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                  ) : (
+                    <>
+                      <span>💬</span> Verify with Real WhatsApp Code
+                    </>
+                  )}
+                </button>
+              ) : (
+                <div className="bg-emerald-50 rounded-2xl p-3 border border-emerald-150 text-center space-y-1.5">
+                  <p className="text-[11px] font-bold text-emerald-800">
+                    ✅ Dynamic OTP Generated:
+                  </p>
+                  <p className="font-mono font-black text-rose-500 text-lg tracking-wider">
+                    {suspiciousWaCode}
+                  </p>
+                  <a
+                    href={`https://wa.me/2348028416553?text=Verify%20my%20Yeedem%20account%20code:%20${suspiciousWaCode}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block text-[11px] font-extrabold text-[#00A6FF] hover:underline"
+                  >
+                    Open WhatsApp to Auto-Send Message ↗
+                  </a>
+                  <p className="text-[9px] text-slate-400">
+                    Once you send the WhatsApp message, your workspace will instantly unlock automatically!
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* OTP Input Form */}
+            <form onSubmit={handleVerifySuspiciousOtp} className="space-y-4">
+              <div className="space-y-1 text-left">
+                <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Verification PIN or WhatsApp Code</label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  placeholder="••••••"
+                  value={suspiciousOtp}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '');
+                    setSuspiciousOtp(val);
+                    setSuspiciousOtpError(null);
+                  }}
+                  className="w-full text-center text-2xl tracking-[0.5em] pl-[0.5em] py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl font-mono focus:outline-none focus:border-[#00A6FF] focus:bg-white transition-all text-[#0E1338] font-bold placeholder-gray-300"
+                  disabled={suspiciousOtpLoading}
+                  required
+                  autoFocus
+                />
+              </div>
+
+              {suspiciousOtpError && (
+                <div className="text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-xl px-3 py-2 font-medium">
+                  ⚠️ {suspiciousOtpError}
+                </div>
+              )}
+
+              <div className="space-y-2 pt-1">
+                <button
+                  type="submit"
+                  disabled={suspiciousOtpLoading || (suspiciousOtp.length !== 4 && suspiciousOtp.length !== 6)}
+                  className="w-full bg-[#00A6FF] hover:bg-[#0092E0] disabled:bg-gray-200 disabled:text-gray-400 text-white font-black py-3 rounded-xl text-xs transition duration-250 shadow-md flex items-center justify-center gap-2"
+                >
+                  {suspiciousOtpLoading ? (
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                  ) : (
+                    "Authorize & Unlock Workspace"
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="w-full py-2 bg-gray-50 hover:bg-gray-100 rounded-xl text-xs font-bold text-gray-500 hover:text-gray-750 transition"
+                >
+                  Disconnect & Exit Session
+                </button>
+              </div>
+            </form>
+
+          </div>
+        </div>
+      )}
       
     </div>
   );

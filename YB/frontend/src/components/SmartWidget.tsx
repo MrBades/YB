@@ -622,7 +622,7 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
   };
 
   return (
-    <div className="bg-white rounded-[24px] shadow-md overflow-hidden flex flex-col transition-all duration-300" id="smart-widget">
+    <div className="bg-white rounded-[24px] shadow-md overflow-hidden flex flex-col transition-all duration-300 w-full" id="smart-widget">
       {/* 1. Clear, Modern Switcher Header */}
       <div className="bg-[#0E1338] px-4.5 py-3 flex items-center justify-between gap-4 text-white border-b border-white/10">
         <div className="flex items-center gap-1 bg-white/10 p-1 rounded-xl border border-white/5 shadow-inner" id="smart-widget-header-tabs">
@@ -660,7 +660,7 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
                 : 'text-gray-300 hover:text-white hover:bg-white/5'
             }`}
           >
-            <span>📝 Manual Input</span>
+            <span>📝 Manual</span>
           </button>
         </div>
 
@@ -808,8 +808,12 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
                   <textarea
                     value={text}
                     onChange={(e) => setText(e.target.value)}
-                    placeholder="Make changes, add new features, ask for anything..."
-                    rows={5}
+                    placeholder={
+                      isService 
+                        ? "Describe the service transaction...\ne.g. 'To Alao: 5 hours of Web Design at 15000 each, deposit paid 50000'\nOr '3 sessions of consulting for John at 25000 each'"
+                        : "Describe the trade or invoice details here...\ne.g. 'Sold to Baba: 15 bags of cement at 8500 each, paid 100k'\nOr '6 sacks of flour to Alao for 32000 each, paid 120000 Naira'\nOr list line by line:\n'customer: Ada\n2 bags of rice at 75000\n3 bags of flour at 32000\npaid 150000'"
+                    }
+                    rows={6}
                     className="w-full bg-transparent border-none outline-none focus:outline-none focus:ring-0 text-sm font-sans placeholder:text-gray-400 text-gray-800 resize-none pb-20 pr-2 scrollbar-thin leading-relaxed"
                     id="unified-multimodal-input"
                   />
@@ -891,7 +895,7 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
                     <button
                       type="button"
                       onClick={handleResetAll}
-                      disabled={!text && imageQueue.length === 0 && !recordedVoiceBlob}
+                      disabled={text === '' && imageQueue.length === 0 && !recordedVoiceBlob}
                       className="p-2 hover:bg-gray-100 text-gray-300 hover:text-gray-600 rounded-xl transition cursor-pointer disabled:opacity-25"
                       title="Clear active workspace input"
                     >
@@ -899,6 +903,65 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
                     </button>
                   </div>
 
+                </div>
+
+                {/* Direct Transaction Format Templates Quick-Inject system */}
+                <div className="bg-[#F4F9FF] rounded-[18px] p-3.5 border border-[#00A6FF]/10 space-y-2 mt-2 leading-tight">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-[#0E1338] flex items-center gap-1">
+                      <FileText className="w-3.5 h-3.5 text-[#00A6FF]" /> Suggested Format Templates:
+                    </span>
+                    <span className="text-[9px] text-gray-400 font-medium">Click to insert standard layout</span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {isService ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setText("to Alao: 5 hours of Web Design at 15000 each, deposit paid 50000")}
+                          className="px-3 py-2 text-left text-[11px] bg-white hover:bg-blue-100/10 hover:border-blue-400 text-gray-700 rounded-xl border border-gray-200 transition-all font-mono leading-relaxed"
+                        >
+                          <span className="text-blue-600 font-bold block text-[9px] uppercase tracking-wider mb-0.5">💻 Time/Hourly Service Format</span>
+                          "to Alao: 5 hours of Web Design at 15000 each, deposit paid 50000"
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setText("3 sessions of consulting for John Obi at 25000 each")}
+                          className="px-3 py-2 text-left text-[11px] bg-white hover:bg-blue-100/10 hover:border-blue-400 text-gray-700 rounded-xl border border-gray-200 transition-all font-mono leading-relaxed"
+                        >
+                          <span className="text-amber-600 font-bold block text-[9px] uppercase tracking-wider mb-0.5">💼 Flat Session Service Format</span>
+                          "3 sessions of consulting for John Obi at 25000 each"
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setText("sold to Baba: 15 bags of cement at 8500 each, paid 100000")}
+                          className="px-3 py-2 text-left text-[11px] bg-white hover:bg-blue-100/10 hover:border-[#00A6FF]/40 text-gray-700 rounded-xl border border-gray-200 transition-all font-mono leading-relaxed shadow-sm hover:shadow"
+                        >
+                          <span className="text-blue-600 font-bold block text-[9px] uppercase tracking-wider mb-0.5">📦 Standard Single Item Invoice</span>
+                          "sold to Baba: 15 bags of cement at 8500 each, paid 100000"
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setText("6 sacks of flour to Alao for 32000 each, paid 120000")}
+                          className="px-3 py-2 text-left text-[11px] bg-white hover:bg-blue-100/10 hover:border-[#00A6FF]/40 text-gray-700 rounded-xl border border-gray-200 transition-all font-mono leading-relaxed shadow-sm hover:shadow"
+                        >
+                          <span className="text-emerald-600 font-bold block text-[9px] uppercase tracking-wider mb-0.5">🌾 Bulk Price Invoice</span>
+                          "6 sacks of flour to Alao for 32000 each, paid 120000"
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setText("customer: John Obi\n5 bags of corn at 25000\n2 packs of sugar at 15000\npaid 100000")}
+                          className="px-3 py-2 text-left text-[11px] bg-white hover:bg-blue-100/10 hover:border-[#00A6FF]/40 text-gray-700 rounded-xl border border-gray-200 transition-all font-mono leading-relaxed shadow-sm hover:shadow"
+                        >
+                          <span className="text-purple-600 font-bold block text-[9px] uppercase tracking-wider mb-0.5">📋 Multi-Item Line-by-Line list</span>
+                          {"customer: John Obi\n5 bags of corn at 25000\n2 packs of sugar at 15000\npaid 100000"}
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {/* THE DEDICATED FULL-WIDTH GENERATE ACTION BUTTON */}
@@ -909,7 +972,7 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
                 >
                   {isLoading ? (
                     <>
-                      <Loader2 className="w-4 .5 h-4.5 animate-spin text-[#00A6FF]" />
+                      <Loader2 className="w-4.5 h-4.5 animate-spin text-[#00A6FF]" />
                       <span>Synthesizing intelligence parameters...</span>
                     </>
                   ) : (
@@ -931,7 +994,7 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
             )}
           </div>
         ) : (
-          /* "📝 Manual Input" Classic Structured Form Layout directly nested inside the widget card! */
+          /* "📝 Manual" Classic Structured Form Layout directly nested inside the widget card! */
           <form onSubmit={handleManualFormSubmit} className="space-y-4 text-xs text-gray-700 animate-fadeIn bg-gray-50/30 p-4 rounded-2xl">
             <div className="border-b pb-2 mb-3">
               <h3 className="font-display font-bold text-sm text-[#0E1338] flex items-center gap-1.5 uppercase tracking-wider">
@@ -957,9 +1020,12 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
               </div>
 
               <div>
-                <label className="block font-semibold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                  <ShoppingBag className="w-3.5 h-3.5 text-gray-400" /> {isService ? 'Service Provided' : 'Product / Commodity'}
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block font-semibold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                    <ShoppingBag className="w-3.5 h-3.5 text-gray-400" /> {isService ? 'Service Provided' : 'Product / Commodity'}
+                  </label>
+                  <button type="button" className="text-[10px] text-[#00A6FF] font-bold hover:underline mb-1.5" onClick={() => alert('Category management coming soon!')}>+ Add Category</button>
+                </div>
                 <input
                   type="text"
                   value={manualProductName}

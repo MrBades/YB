@@ -19,9 +19,10 @@ import PricingGrid from './PricingGrid';
 
 interface LandingPageProps {
   onNavigate: (screen: 'login' | 'about' | 'terms' | 'guest_invoice') => void;
+  onUpgrade: (plan: string, billingCycle: 'monthly' | 'annually', amount: number) => void;
 }
 
-export default function LandingPage({ onNavigate }: LandingPageProps) {
+export default function LandingPage({ onNavigate, onUpgrade }: LandingPageProps) {
   return (
     <div className="space-y-16 py-4 animate-fadeIn">
       
@@ -241,7 +242,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           <h2 className="text-2xl md:text-3xl font-serif font-extrabold text-[#0E1338]">Tailored Workspace Pricing Plans</h2>
           <p className="text-xs text-gray-400 max-w-lg mx-auto">Choose a plan that fits your business scale. No setup fees, cancel anytime.</p>
         </div>
-        <PricingGrid onNavigate={onNavigate} />
+        <PricingGrid onNavigate={onNavigate} onUpgrade={onUpgrade} />
       </section>
 
       {/* 5. Honest Nigerian Market Testimonials */}

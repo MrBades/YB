@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface PricingPlan {
@@ -19,7 +19,7 @@ const plans: PricingPlan[] = [
     name: 'SME Basic',
     monthlyPrice: 0,
     annualPrice: 0,
-    description: 'Perfect for micro-entrepreneurs.',
+    description: 'Designed for micro-entrepreneurs managing essential records.',
     features: ['5 manual invoices monthly', 'Manual invoice entry', 'Fuse Search Mode'],
     buttonText: 'Get Started Free',
   },
@@ -29,7 +29,7 @@ const plans: PricingPlan[] = [
     monthlyPrice: 4500,
     annualPrice: 45000,
     featured: true,
-    description: 'Perfect for growing shops needing AI powers.',
+    description: 'Perfect for scaling shops needing AI-powered efficiency.',
     features: ['200 invoices monthly', 'AI invoice parsing', 'Advanced analytics', 'WhatsApp debt alerts'],
     buttonText: 'Select Growth',
   },
@@ -38,7 +38,7 @@ const plans: PricingPlan[] = [
     name: 'Starter Pro',
     monthlyPrice: 7500,
     annualPrice: 75000,
-    description: 'Ideal for businesses needing automated tracking.',
+    description: 'Ideal for proactive businesses requiring full automation.',
     features: ['Unlimited ledger logs', 'Up to 3 operator staff clerks', 'Automated Daily Cloud Backups'],
     buttonText: 'Start 14-Day Free Trial',
   },
@@ -47,14 +47,23 @@ const plans: PricingPlan[] = [
     name: 'Enterprise',
     monthlyPrice: 20000,
     annualPrice: 200000,
-    description: 'For massive warehouses needing unified tracking.',
+    description: 'Robust unified tracking for massive warehouse operations.',
     features: ['Multi-shop synchronization', 'Unlimited clerk/operator accounts', '24/7 Dedicated Support Managers'],
     buttonText: 'Contact Enterprise',
   },
 ];
 
-export default function PricingGrid({ onNavigate }: { onNavigate: (screen: 'login' | 'about' | 'terms' | 'guest_invoice') => void; }) {
+export default function PricingGrid({ 
+  onNavigate, 
+  onUpgrade,
+  currentPlan
+}: { 
+  onNavigate: (screen: 'login' | 'about' | 'terms' | 'guest_invoice') => void; 
+  onUpgrade: (plan: string, billingCycle: 'monthly' | 'annually', amount: number) => void;
+  currentPlan?: string;
+}) {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annually'>('monthly');
+  const [confirmPlan, setConfirmPlan] = useState<PricingPlan | null>(null);
 
   return (
     <div className="py-12 space-y-8">
@@ -82,12 +91,19 @@ export default function PricingGrid({ onNavigate }: { onNavigate: (screen: 'logi
           <div
             key={plan.id}
             className={`bg-white rounded-3xl p-6 border transition-all duration-300 flex flex-col justify-between ${
-              plan.featured 
-                ? 'border-2 border-[#00A6FF] shadow-lg relative' 
-                : 'border-gray-200 hover:border-gray-300'
+              plan.name === currentPlan
+                ? 'border-2 border-emerald-500 shadow-md ring-1 ring-emerald-100 ring-offset-2'
+                : plan.featured 
+                  ? 'border-2 border-[#00A6FF] shadow-lg relative' 
+                  : 'border-gray-200 hover:border-gray-300'
             }`}
           >
-            {plan.featured && (
+            {plan.name === currentPlan && (
+              <span className="absolute -top-3 right-4 bg-emerald-500 text-white text-[9px] font-black uppercase px-3 py-1 rounded-full tracking-wider">
+                Current Plan
+              </span>
+            )}
+            {plan.featured && plan.name !== currentPlan && (
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#00A6FF] text-white text-[9px] font-black uppercase px-3 py-1 rounded-full tracking-wider">
                 💥 MOST POPULAR
               </span>
@@ -95,7 +111,7 @@ export default function PricingGrid({ onNavigate }: { onNavigate: (screen: 'logi
             
             <div className="space-y-4">
               <div>
-                <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-widest ${plan.featured ? 'bg-blue-50 text-[#00A6FF]' : 'bg-gray-100 text-gray-650'}`}>
+                <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-widest ${plan.name === currentPlan ? 'bg-emerald-50 text-emerald-600' : plan.featured ? 'bg-blue-50 text-[#00A6FF]' : 'bg-gray-100 text-gray-650'}`}>
                   {plan.name}
                 </span>
                 <div className="mt-2 flex items-baseline gap-1">
@@ -124,7 +140,7 @@ export default function PricingGrid({ onNavigate }: { onNavigate: (screen: 'logi
             </div>
 
             <button
-              onClick={() => onNavigate('login')}
+              onClick={() => setConfirmPlan(plan)}
               className={`mt-6 w-full h-10 rounded-xl text-xs font-bold transition shadow-sm ${
                 plan.featured 
                   ? 'bg-[#00A6FF] text-white hover:bg-[#0095E6]' 
@@ -136,6 +152,46 @@ export default function PricingGrid({ onNavigate }: { onNavigate: (screen: 'logi
           </div>
         ))}
       </div>
+
+      <AnimatePresence>
+        {confirmPlan && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white p-6 rounded-3xl w-full max-w-sm space-y-4"
+            >
+              <div className="flex justify-between items-center">
+                <h3 className="font-bold text-lg">Confirm Upgrade - {confirmPlan.name} Plan</h3>
+                <button onClick={() => setConfirmPlan(null)}><X size={20}/></button>
+              </div>
+              <p className="text-gray-600 text-sm">
+                Upgrading to the <span className="font-bold text-[#00A6FF]">{confirmPlan.name}</span> plan unlocks:
+              </p>
+              <ul className="text-sm text-gray-500 list-disc list-inside space-y-1">
+                {confirmPlan.features.map((feature, i) => <li key={i}>{feature}</li>)}
+              </ul>
+              <p className="text-gray-600 text-sm">Are you sure you want to proceed?</p>
+              <button
+                onClick={() => {
+                  const amt = billingCycle === 'monthly' ? confirmPlan.monthlyPrice : confirmPlan.annualPrice;
+                  onUpgrade(confirmPlan.name, billingCycle, amt);
+                  setConfirmPlan(null);
+                }}
+                className="w-full bg-[#00A6FF] text-white py-2 rounded-xl font-bold hover:bg-[#0095E6] transition"
+              >
+                Confirm & Pay ₦{billingCycle === 'monthly' ? confirmPlan.monthlyPrice.toLocaleString() : confirmPlan.annualPrice.toLocaleString()}
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

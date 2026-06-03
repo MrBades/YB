@@ -174,6 +174,9 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
       setError('');
       if (/^\d{0,4}$/.test(value)) {
           setPinAttempt(value);
+          if (value.length === 4) {
+              triggerPinLogin(value);
+          }
       }
   };
 
@@ -272,7 +275,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
                 {/* Keypad */}
                 <div className="grid grid-cols-3 gap-2 mt-4">
                     {[1,2,3,4,5,6,7,8,9,0].map((num) => (
-                        <button key={num} onClick={() => handlePinLogin(num.toString())} className="bg-white/10 text-white p-4 rounded-xl text-xl font-bold">
+                        <button key={num} onClick={() => handlePinInput(pinAttempt + num.toString())} className="bg-white/10 text-white p-4 rounded-xl text-xl font-bold">
                             {num}
                         </button>
                     ))}

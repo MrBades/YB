@@ -39,7 +39,16 @@ export function getDjangoApiUrl(path: string): string {
  */
 export async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
   const url = getDjangoApiUrl(path);
-  return fetch(url, options);
+  try {
+    const res = await fetch(url, options);
+    return res;
+  } catch (err) {
+    if (url !== path) {
+      console.warn("Django API fetch failed. Retrying with same-origin Local Express/Node server:", path, err);
+      return fetch(path, options);
+    }
+    throw err;
+  }
 }
 
 /**
@@ -54,6 +63,15 @@ export async function nodeFetch(path: string, options?: RequestInit): Promise<Re
  */
 export async function djangoFetch(path: string, options?: RequestInit): Promise<Response> {
   const url = getDjangoApiUrl(path);
-  return fetch(url, options);
+  try {
+    const res = await fetch(url, options);
+    return res;
+  } catch (err) {
+    if (url !== path) {
+      console.warn("Django API fetch failed. Retrying with same-origin Local Express/Node server:", path, err);
+      return fetch(path, options);
+    }
+    throw err;
+  }
 }
 
