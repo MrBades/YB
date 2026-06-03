@@ -8,8 +8,8 @@ from .views import (
     ProbeAuthView, VerifyOtpView, RegisterOnboardingView,
     SetPinView, PinLoginView, ResetForgottenPinView,
     ValidateSessionView, VerifySuspiciousOtpView, LogoutView,
-    UnlockAllView, AdminMigrateView, BusinessSettingsView, BackupSaveView,
-
+    UnlockAllView, BusinessSettingsView, BackupSaveView,
+    SmartProductProcessorAPIView,
     BackupListView, BackupDownloadView, BackupDeleteView,
     GuestInvoiceGenerateView, TerminalPinVerifyView,
     StaffListView, StaffLogView, SystemMigrateView
@@ -58,8 +58,6 @@ urlpatterns = [
     # Admin unlock all
     path('admin/unlock-all', UnlockAllView.as_view(), name='admin-unlock-all'),
     path('admin/unlock-all/', UnlockAllView.as_view()),
-    path('admin/migrate', AdminMigrateView.as_view(), name='admin-migrate'),
-    path('admin/migrate/', AdminMigrateView.as_view()),
     
     # Settings & preferences
     path('business/settings', BusinessSettingsView.as_view(), name='business-settings'),

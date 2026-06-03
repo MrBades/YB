@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Invoice, BusinessProfile, Customer } from '../types';
 import { generateInvoicePDF } from '../lib/pdfGenerator';
-import { WhatsAppPayLinkGenerator } from './WhatsAppPayLinkGenerator';
 import { 
   Printer, 
   Calendar, 
@@ -26,10 +25,6 @@ interface InvoiceThemeProps {
   onUpdateInvoiceDate?: (invoiceId: string, newDate: string) => void;
   onUpdateInvoiceStatus?: (invoiceId: string, status: 'DRAFT' | 'PAID' | 'OVERDUE') => void;
   showTax?: boolean;
-  isLoggedIn?: boolean;
-  onRequireSignup?: () => void;
-  isSharedPublicView?: boolean;
-  onTriggerBackup?: () => Promise<any>;
 }
 
 export default function InvoiceTheme({ 
@@ -37,18 +32,10 @@ export default function InvoiceTheme({
   business, 
   customers, 
   onUpdateCustomerContact,
-  onUpdateInvoiceDate: rawOnUpdateInvoiceDate,
-  onUpdateInvoiceStatus: rawOnUpdateInvoiceStatus,
-  showTax = false,
-  isLoggedIn: rawIsLoggedIn = true,
-  onRequireSignup,
-  isSharedPublicView = false,
-  onTriggerBackup
+  onUpdateInvoiceDate,
+  onUpdateInvoiceStatus,
+  showTax = false
 }: InvoiceThemeProps) {
-  const onUpdateInvoiceDate = isSharedPublicView ? undefined : rawOnUpdateInvoiceDate;
-  const onUpdateInvoiceStatus = isSharedPublicView ? undefined : rawOnUpdateInvoiceStatus;
-  const isLoggedIn = isSharedPublicView ? true : rawIsLoggedIn;
-
   const { businessName, address, phone, invoiceTemplatePreference, businessLogo, logoWidth, logoHeight, logoRotation, headerRotation } = business;
   const isService = business?.businessType === 'service';
 
@@ -83,7 +70,6 @@ export default function InvoiceTheme({
   // Local Pop-up & Validation States
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
-  const [isDetailsExpanded, setIsDetailsExpanded] = useState(false); // <--- Expansion state
   const [tempPhone, setTempPhone] = useState('');
   const [tempEmail, setTempEmail] = useState('');
 
@@ -103,7 +89,6 @@ export default function InvoiceTheme({
 
   // 3. WHATSAPP TRIGGER INTERCEPT WORKFLOW
   const handleWhatsAppAction = () => {
-    if (!isLoggedIn && onRequireSignup) { onRequireSignup(); return; }
     let cleanedPhone = customerPhone.trim();
     if (cleanedPhone.startsWith('0')) {
       cleanedPhone = '+234' + cleanedPhone.slice(1);
@@ -146,9 +131,6 @@ export default function InvoiceTheme({
   };
 
   const executeWhatsAppShare = (phoneNo: string) => {
-    if (onTriggerBackup) {
-      onTriggerBackup().catch(() => {});
-    }
     let normalized = phoneNo.trim();
     if (normalized.startsWith('0')) {
       normalized = '+234' + normalized.slice(1);
@@ -163,7 +145,6 @@ export default function InvoiceTheme({
 
   // 4. EMAIL TRIGGER INTERCEPT WORKFLOW
   const handleEmailAction = () => {
-    if (!isLoggedIn && onRequireSignup) { onRequireSignup(); return; }
     const cleanedEmail = customerEmail.trim();
     if (!cleanedEmail || cleanedEmail === '') {
       setTempEmail(cleanedEmail);
@@ -203,14 +184,6 @@ export default function InvoiceTheme({
 
   // 5. PUBLIC LINK WORKFLOW
   const copyPublicLink = () => {
-    if (!isLoggedIn && onRequireSignup) { onRequireSignup(); return; }
-
-    if (onTriggerBackup) {
-      onTriggerBackup().catch((e) => {
-        console.warn("[BACKUP] Immediate backup trigger failed during link copy:", e);
-      });
-    }
-
     const previewToken = "yb_token_" + invoice.id.substring(0, 8);
     const mockPublicUrl = window.location.origin + `/receipts/token/${previewToken}/`;
     
@@ -231,7 +204,6 @@ export default function InvoiceTheme({
 
   // 7. FORMATTED PDF DOWNLOAD GENERATOR
   const generatePDFDownload = () => {
-    if (!isLoggedIn && onRequireSignup) { onRequireSignup(); return; }
     generateInvoicePDF(invoice, business, customers, false, showTax);
     triggerToast("✓ Downloaded customized, branded PDF invoice successfully!");
   };
@@ -327,7 +299,7 @@ export default function InvoiceTheme({
       </div>
 
       {/* Financial Details */}
-      <div className={`flex border-t-2 border-black pt-3 text-[10px] ${!isLoggedIn ? 'guest-blur' : ''}`}>
+      <div className="flex border-t-2 border-black pt-3 text-[10px]">
         <div className="w-1/2 text-[8px] italic leading-tight">
           <span>* Real-time classic offline-print preview simulation</span>
         </div>
@@ -485,7 +457,7 @@ export default function InvoiceTheme({
       </div>
 
       {/* Subtotal columns */}
-      <div className={`flex bg-blue-50/10 p-5 rounded-2xl mt-4 ${!isLoggedIn ? 'guest-blur' : ''}`}>
+      <div className="flex bg-blue-50/10 p-5 rounded-2xl mt-4">
         <div className="w-1/2 flex items-center gap-2">
           <ShieldCheck className="w-5 h-5 text-emerald-500" />
           <span className="text-[11px] text-gray-404 font-medium">Verified by Yeedem Books Ledger Engine</span>
@@ -575,7 +547,7 @@ export default function InvoiceTheme({
       </div>
 
       {/* Pricing lists */}
-      <div className={`bg-white/50 p-2.5 rounded-xl pt-3 text-[11px] space-y-1 shadow-xs ${!isLoggedIn ? 'guest-blur' : ''}`}>
+      <div className="bg-white/50 p-2.5 rounded-xl pt-3 text-[11px] space-y-1 shadow-xs">
         <div className="flex justify-between">
           <span>TX SUBTOTAL:</span>
           <span>₦{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
@@ -779,7 +751,7 @@ export default function InvoiceTheme({
 
         {/* FOOTER & TOTALS SECTION */}
         <div 
-          className={`flex p-4 rounded-b-2xl pt-5 items-start justify-between gap-6 ${getFontFamilyClass(footerStyle.fontFamily)} ${getFontWeightClass(footerStyle.fontWeight)} ${getFontSizeClass(footerStyle.fontSize)} ${!isLoggedIn ? 'guest-blur' : ''}`} 
+          className={`flex p-4 rounded-b-2xl pt-5 items-start justify-between gap-6 ${getFontFamilyClass(footerStyle.fontFamily)} ${getFontWeightClass(footerStyle.fontWeight)} ${getFontSizeClass(footerStyle.fontSize)}`}
           style={{ color: footerStyle.textColor, backgroundColor: footerStyle.backgroundColor || '#F9FAFB' }}
         >
           <div className="w-1/2">
@@ -832,12 +804,7 @@ export default function InvoiceTheme({
   };
 
   return (
-    <div className="space-y-6 relative">
-      {!isLoggedIn && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center opacity-20 pointer-events-none -rotate-12">
-            <span className="text-4xl font-extrabold text-gray-800 bg-gray-200 p-6 px-10 rounded-2xl shadow-xl border-4 border-gray-400 rotate-12">DRAFT PREVIEW - SIGN UP TO DOWNLOAD</span>
-        </div>
-      )}
+    <div className="space-y-6">
       {/* Dynamic Pop-up Toaster Notification */}
       {toastMessage && (
         <div className="fixed top-20 right-6 z-50 bg-[#0E1338] text-white py-3 px-5 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-2.5 animate-slideIn text-xs">
@@ -860,16 +827,12 @@ export default function InvoiceTheme({
       </div>
 
       {/* QUICK ACTIONS & SHARING INTELLIGENCE (2X2 GRID) */}
-      {!isSharedPublicView && (
-        <>
-          <div className="space-y-3">
+      <div className="space-y-3">
         <h3 className="text-[11px] uppercase font-bold tracking-wider text-gray-55/90 pl-1">
           Quick Sharing & Record-Tracking Actions
         </h3>
         <div className="grid grid-cols-2 gap-4">
           
-          <WhatsAppPayLinkGenerator invoice={invoice} businessPhone={phone || "+2348028416553"} />
-
           {/* WHATSAPP CARD (Soft Green background) */}
           <button 
             onClick={handleWhatsAppAction}
@@ -976,8 +939,6 @@ export default function InvoiceTheme({
         </div>
 
       </div>
-        </>
-      )}
 
       {/* INTERCEPTOR UPDATE POP-UP MODALS */}
 

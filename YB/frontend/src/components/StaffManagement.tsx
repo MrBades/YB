@@ -9,22 +9,7 @@ interface Staff {
     owner_generated_pin: string;
     is_active: boolean;
     shop_slug?: string;
-    allow_create_invoices?: boolean;
-    allow_view_customers?: boolean;
-    allow_view_inventory?: boolean;
-    allow_view_costs?: boolean;
-    allow_delete_invoices?: boolean;
-    allow_manage_products?: boolean;
 }
-
-const permissionsList = [
-    { key: 'allow_create_invoices', label: 'Create Sales', desc: 'Allows clerk to generate client receipts and record transactions' },
-    { key: 'allow_view_customers', label: 'View Ledger', desc: 'Allows clerk to list customer profiles and balance summaries' },
-    { key: 'allow_view_inventory', label: 'View Stock', desc: 'Allows clerk to list and search catalog inventory items' },
-    { key: 'allow_view_costs', label: 'View Cost & Profits', desc: 'Allows clerk to view product wholesale costs and profit margins' },
-    { key: 'allow_delete_invoices', label: 'Delete Invoices', desc: 'Allows clerk to delete historical invoice lines' },
-    { key: 'allow_manage_products', label: 'Manage Products', desc: 'Allows clerk to update inventory, restock items, and add catalog lines' }
-];
 
 interface StaffManagementProps {
     onUnauthorized: () => void;
@@ -32,8 +17,6 @@ interface StaffManagementProps {
     deviceFingerprint?: string;
     approxRegion?: string;
     businessName?: string;
-    currentUserRole?: 'owner' | 'cashier';
-    isAuthenticated?: boolean;
 }
 
 export default function StaffManagement({ 
@@ -41,9 +24,7 @@ export default function StaffManagement({
     isSuspiciousLocked, 
     deviceFingerprint, 
     approxRegion,
-    businessName,
-    currentUserRole = 'owner',
-    isAuthenticated = false
+    businessName
 }: StaffManagementProps) {
     const [staff, setStaff] = useState<Staff[]>([]);
     const [nameSlug, setNameSlug] = useState('');
@@ -51,13 +32,18 @@ export default function StaffManagement({
     const [error, setError] = useState('');
     const [copiedStaffId, setCopiedStaffId] = useState<string | null>(null);
 
-    const sesId = localStorage.getItem('session_id');
+    // If suspicious, show a message instead of the table
+    if (isSuspiciousLocked) {
+        return (
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 text-center">
+                <p className="font-bold text-red-500 mb-2">Suspicious session detected</p>
+                <p className="text-xs text-gray-500">Please verify your account to unlock.</p>
+            </div>
+        );
+    }
 
     useEffect(() => {
-        if (!isAuthenticated) return;
         if (isSuspiciousLocked) return;
-        if ((currentUserRole as string) === 'cashier') return;
-        
         let active = true;
         
         const sesId = localStorage.getItem('session_id');
@@ -96,44 +82,13 @@ export default function StaffManagement({
         })
         .catch(err => {
             if (active) {
-                // If the error is not 'Unauthorized', log it
-                if (err.message !== 'Unauthorized') {
-                    console.error('Error fetching staff list:', err);
-                }
+                console.error('Error fetching staff list:', err);
                 setStaff([]);
             }
         });
 
         return () => { active = false; };
-    }, [onUnauthorized, isSuspiciousLocked, deviceFingerprint, approxRegion, currentUserRole, isAuthenticated]);
-
-    // If not authenticated, return null immediately
-    if (!isAuthenticated) {
-        return null;
-    }
-
-    // If suspicious, show a message instead of the table
-    if (isSuspiciousLocked) {
-        return (
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 text-center">
-                <p className="font-bold text-red-500 mb-2">Suspicious session detected</p>
-                <p className="text-xs text-gray-500">Please verify your account to unlock.</p>
-            </div>
-        );
-    }
-
-    if (currentUserRole === 'cashier') {
-        return null;
-    }
-    
-    if (!sesId) {
-        return (
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 text-center">
-                <p className="font-bold text-gray-500 mb-2">Unauthorized</p>
-                <p className="text-xs text-gray-500">Please log in to access staff management.</p>
-            </div>
-        );
-    }
+    }, [onUnauthorized, isSuspiciousLocked, deviceFingerprint, approxRegion]);
 
     const addStaff = () => {
         if (isSuspiciousLocked) return;
@@ -228,40 +183,6 @@ export default function StaffManagement({
         .catch(err => console.error('Error toggling staff status:', err));
     };
 
-    const togglePermission = (id: string, permissionKey: string, currentValue: boolean) => {
-        const sesId = localStorage.getItem('session_id') || '';
-        const simFp = deviceFingerprint || localStorage.getItem('simulated_device_fp') || 'unknown';
-        const simLoc = approxRegion || localStorage.getItem('simulated_location') || 'NG-Lagos';
-        apiFetch(`/api/staff/${id}`, {
-            method: 'PUT',
-            body: JSON.stringify({ [permissionKey]: !currentValue }),
-            headers: { 
-                'Content-Type': 'application/json',
-                'x-session-id': sesId,
-                'x-device-fingerprint': simFp,
-                'x-approx-region': simLoc
-            }
-        })
-        .then(async res => {
-            const isJson = res.headers.get('content-type')?.includes('application/json');
-            const data = isJson ? await res.json() : null;
-            if (!res.ok) {
-                if (res.status === 401 || res.status === 403) {
-                    onUnauthorized();
-                    throw new Error(data?.error || 'Unauthorized or suspicious session.');
-                }
-                throw new Error(data?.error || `Server responded with status ${res.status}`);
-            }
-            return data;
-        })
-        .then(data => {
-            if (data && !data.error) {
-                setStaff(staff.map(s => s.id === id ? data : s));
-            }
-        })
-        .catch(err => console.error('Error toggling staff permission:', err));
-    };
-
     const handleCopy = (s: Staff) => {
         const ownerShopSlug = s.shop_slug || businessName?.toLowerCase().replace(/\s+/g, '-') || 'default-shop';
         const workerNameSlug = s.name_slug;
@@ -314,7 +235,6 @@ export default function StaffManagement({
                         <tr className="border-b uppercase tracking-wider text-[10px] text-gray-400 font-semibold">
                             <th className="py-3 px-2">Staff Member</th>
                             <th className="py-3 px-2">Access PIN</th>
-                            <th className="py-3 px-2">Permission Rights (Toggle)</th>
                             <th className="py-3 px-2">Terminal Link</th>
                             <th className="py-3 px-2 text-right">Status & Action</th>
                         </tr>
@@ -322,7 +242,7 @@ export default function StaffManagement({
                     <tbody>
                         {staff.length === 0 ? (
                             <tr>
-                                <td colSpan={5} className="py-8 text-center text-gray-400 italic font-serif">
+                                <td colSpan={4} className="py-8 text-center text-gray-400 italic font-serif">
                                     No staff terminals configured. Add a worker above to begin.
                                 </td>
                             </tr>
@@ -340,28 +260,6 @@ export default function StaffManagement({
                                         </td>
                                         <td className="py-3.5 px-2 font-mono text-gray-500">
                                             •••• <span className="text-[10px] text-gray-300 ml-1">({s.owner_generated_pin})</span>
-                                        </td>
-                                        <td className="py-3.5 px-2">
-                                            <div className="flex flex-wrap gap-1 max-w-[320px]">
-                                                {permissionsList.map(p => {
-                                                    const val = !!(s as any)[p.key];
-                                                    return (
-                                                        <button
-                                                            key={p.key}
-                                                            onClick={() => togglePermission(s.id, p.key, val)}
-                                                            className={`px-2 py-1 rounded-md border text-[9px] font-bold transition flex items-center gap-1 ${
-                                                                val 
-                                                                    ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' 
-                                                                    : 'bg-gray-50 text-gray-450 border-gray-150 hover:bg-gray-100 hover:text-gray-600'
-                                                            }`}
-                                                            title={p.desc}
-                                                        >
-                                                            <div className={`w-1 h-1 rounded-full ${val ? 'bg-blue-500' : 'bg-gray-300'}`}></div>
-                                                            {p.label}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
                                         </td>
                                         <td className="py-3.5 px-2">
                                             {s.is_active ? (

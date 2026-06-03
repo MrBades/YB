@@ -8,7 +8,7 @@ import GuestInvoiceGenerator from './components/GuestInvoiceGenerator';
 import LandingPage from './components/LandingPage';
 import AboutPage from './components/AboutPage';
 import TermsPage from './components/TermsPage';
-import { apiFetch, nodeFetch } from './lib/api';
+import { apiFetch } from './lib/api';
 import { Customer, Invoice, BusinessProfile, UserState, Product, RestockEvent } from './types';
 import Onboarding from './components/Onboarding';
 import SmartWidget from './components/SmartWidget';
@@ -23,7 +23,6 @@ import BackupManager from './components/BackupManager';
 import PWAInstallHelper from './components/PWAInstallHelper';
 import DjangoAdminController from './components/DjangoAdminController';
 import OnboardingSummary from './components/OnboardingSummary';
-import CloseAccountCard from './components/CloseAccountCard';
 import InteractiveTour from './components/InteractiveTour';
 import { formatNaira } from './utils/currency';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area } from 'recharts';
@@ -57,14 +56,8 @@ import {
   Download,
   LogOut,
   Smartphone,
-  HelpCircle,
-  Sparkles,
-  Printer,
-  Maximize2,
-  Minimize2
+  HelpCircle
 } from 'lucide-react';
-import { DashboardQuickActions } from './components/DashboardQuickActions';
-import { SyncNotificationChip } from './components/SyncNotificationChip';
 
 export default function App() {
   // Temporary session unlock on load
@@ -85,19 +78,11 @@ export default function App() {
 
   useEffect(() => {
     const setFp = async () => {
-      try {
-        const fp = await FingerprintJS.load();
-        const { visitorId } = await fp.get();
-        setDeviceFingerprint(visitorId);
-        setSimulatedDeviceFp(visitorId);
-        localStorage.setItem('device_fingerprint', visitorId);
-      } catch (err) {
-        console.warn("FingerprintJS load/get blocked or failed. Using fallback device identifier:", err);
-        const fallbackValue = localStorage.getItem('device_fingerprint') || ('unknown_fp_' + Math.floor(Math.random() * 900000 + 100000));
-        setDeviceFingerprint(fallbackValue);
-        setSimulatedDeviceFp(fallbackValue);
-        localStorage.setItem('device_fingerprint', fallbackValue);
-      }
+      const fp = await FingerprintJS.load();
+      const { visitorId } = await fp.get();
+      setDeviceFingerprint(visitorId);
+      setSimulatedDeviceFp(visitorId);
+      localStorage.setItem('device_fingerprint', visitorId);
     };
     setFp();
   }, []);
@@ -168,35 +153,13 @@ export default function App() {
             setIsSuspiciousLocked(false);
             if (data.user) {
               const b = data.user.business || {};
-              const isStaff = !!data.is_staff;
-              const storedRole = isStaff ? 'cashier' : 'owner';
-              const parsedStaff = data.staff || null;
-              
-              localStorage.setItem('current_user_role', storedRole);
-              if (isStaff && data.staff) {
-                localStorage.setItem('staff_permissions', JSON.stringify(data.staff));
-                localStorage.setItem('staff_name', data.staff.name_slug);
-              } else if (!isStaff) {
-                localStorage.removeItem('staff_permissions');
-                localStorage.removeItem('staff_name');
-              }
-              
-              setCurrentUserRole(storedRole);
-              if (parsedStaff) {
-                setStaffPermissions(parsedStaff);
-              } else {
-                setStaffPermissions(null);
-              }
-
               setUserState(prev => ({ 
                 ...prev, 
                 authenticated: true, 
                 onboarded: true,
                 email: data.user.phone_or_email,
-                username: storedRole === 'cashier' && parsedStaff
-                  ? `${parsedStaff.name_slug} @ ${data.user.business_name || data.user.phone_or_email}`
-                  : (data.user.full_name || data.user.phone_or_email),
-                ownerPin: storedRole === 'cashier' ? '' : data.user.owner_pin,
+                username: data.user.full_name || data.user.phone_or_email,
+                ownerPin: data.user.owner_pin,
                 business: {
                   ...prev.business!,
                   ...b,
@@ -289,12 +252,6 @@ export default function App() {
     localStorage.removeItem('active_screen');
     localStorage.removeItem('products_catalog');
     localStorage.removeItem('customers_records');
-    localStorage.removeItem('current_user_role');
-    localStorage.removeItem('staff_permissions');
-    localStorage.removeItem('staff_name');
-    
-    setCurrentUserRole('owner');
-    setStaffPermissions(null);
     
     // Completely clear states to prevent remnants or writebacks
     setCustomers([]);
@@ -325,55 +282,6 @@ export default function App() {
     
     setIsSuspiciousLocked(false);
     setActiveScreen('landing');
-  };
-
-  const handleAccountDeleted = () => {
-    const email = userState.email;
-    if (email) {
-      localStorage.removeItem(`customers_records_${email}`);
-      localStorage.removeItem(`products_catalog_${email}`);
-      localStorage.removeItem(`customers_ledger_${email}`);
-      localStorage.removeItem(`inventory_ledger_${email}`);
-      localStorage.removeItem(`last_daily_backup_date_${email}`);
-      localStorage.removeItem(`local_backups_${email}`);
-    }
-    
-    localStorage.removeItem('session_id');
-    localStorage.removeItem('authorized_phone_or_email');
-    localStorage.removeItem('active_screen');
-    localStorage.removeItem('products_catalog');
-    localStorage.removeItem('customers_records');
-    
-    // Completely clear states to prevent remnants or writebacks
-    setCustomers([]);
-    setProducts([]);
-    lastLoadedEmailRef.current = null;
-
-    setUserState({
-      authenticated: false,
-      onboarded: false,
-      username: '',
-      email: '',
-      business: {
-        businessName: '',
-        phone: '',
-        address: '',
-        invoiceTemplatePreference: 'modern_blue',
-        businessLogo: '',
-        customAccentColor: '#00A6FF',
-        customFontSize: 'md',
-        customFontFamily: 'sans',
-        customShowLogo: true,
-        customHeaderTitle: 'TAX INVOICE',
-        customFooterNotes: 'This document acts as an official trade journal entry. Please verify balances online.',
-        customShadowStyle: 'md'
-      },
-      trialCount: 0
-    });
-    
-    setIsSuspiciousLocked(false);
-    setActiveScreen('landing');
-    alert("🎉 Master Purge Complete!\n\nYour account and all associated cloud backups have been permanently deleted from Yeedem servers, and all local browser cookies and storage profiles are completely wiped. You can now register as a brand new merchant.");
   };
 
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -383,35 +291,10 @@ export default function App() {
 
   const [restockLogs, setRestockLogs] = useState<RestockEvent[]>([]);
 
-  // Synchronisation system state variables
-  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'out_of_sync' | 'offline'>('synced');
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const isSyncingRef = useRef(false);
-
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
-
   const [activeScreen, setActiveScreen] = useState<'landing' | 'login' | 'about' | 'terms' | 'guest_invoice' | 'dashboard' | 'debtors' | 'profile' | 'invoice_preview' | 'products' | 'invoices' | 'customers' | 'terminal'>(() => {
     if (window.location.pathname.startsWith('/terminal/')) {
       return 'terminal';
     }
-    if (window.location.pathname.startsWith('/receipts/token/')) {
-      return 'invoice_preview';
-    }
-    const params = new URLSearchParams(window.location.search);
-    const screenParam = params.get('screen') as any;
-    if (screenParam) return screenParam;
-
     const saved = localStorage.getItem('active_screen') as any;
     const validScreens = ['landing', 'login', 'about', 'terms', 'guest_invoice', 'dashboard', 'debtors', 'profile', 'invoice_preview', 'products', 'invoices', 'customers', 'terminal'];
     if (saved && validScreens.includes(saved)) {
@@ -468,7 +351,7 @@ export default function App() {
     }
   };
 
-  const [profileTab, setProfileTab] = useState<'settings' | 'control_desk'>('settings');
+  const [profileTab, setProfileTab] = useState<'settings' | 'django_admin'>('django_admin');
 
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     return localStorage.getItem('theme_dark_mode') === 'true';
@@ -484,53 +367,6 @@ export default function App() {
       localStorage.setItem('active_screen', activeScreen);
     }
   }, [activeScreen]);
-
-  // Effect to load invoice from token URL
-  useEffect(() => {
-    if (window.location.pathname.startsWith('/receipts/token/')) {
-      const token = window.location.pathname.split('/')[3];
-      if (token) {
-        let found = false;
-        // First try to look in local loaded customers just in case
-        for (const cust of customers) {
-           for (const inv of (cust.invoices || [])) {
-              const calculatedToken = "yb_token_" + inv.id.substring(0, 8);
-              if (calculatedToken === token) {
-                setSelectedInvoice(inv);
-                setSharedBusiness(userState.business);
-                found = true;
-                break;
-              }
-           }
-           if (found) break;
-        }
-
-        // If not found, or customers lists are empty, fetch from cloud database using the public endpoint
-        if (!found) {
-          setLoadingSharedInvoice(true);
-          setSharedInvoiceError('');
-          apiFetch(`/api/public/shared-invoice/${token}`)
-            .then(async (res) => {
-              if (res.ok) {
-                const data = await res.json();
-                setSelectedInvoice(data.invoice);
-                setSharedBusiness(data.business);
-              } else {
-                const errData = await res.json().catch(() => ({ error: 'Invoice not found or database sync pending.' }));
-                setSharedInvoiceError(errData.error || 'Failed to retrieve cloud invoice backup.');
-              }
-            })
-            .catch((err) => {
-              console.error("Failed to load invoice from API:", err);
-              setSharedInvoiceError('Failed to fetch invoice from server. Check your network connection.');
-            })
-            .finally(() => {
-              setLoadingSharedInvoice(false);
-            });
-        }
-      }
-    }
-  }, [customers, window.location.pathname]);
 
 
   // Utility for user-specific storage keys
@@ -594,9 +430,7 @@ export default function App() {
         setProducts([]);
       }
 
-      if (userState.email) {
-        lastLoadedEmailRef.current = userState.email;
-      }
+      lastLoadedEmailRef.current = userState.email;
 
       // Smart Cross-Browser Auto-Sync Engine:
       // If the browser registers an empty ledger for this account on boot/login,
@@ -651,12 +485,8 @@ export default function App() {
   }, [userState.authenticated, userState.email]);
 
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
-  const [sharedBusiness, setSharedBusiness] = useState<any>(null);
-  const [loadingSharedInvoice, setLoadingSharedInvoice] = useState(false);
-  const [sharedInvoiceError, setSharedInvoiceError] = useState('');
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
 
   // Security (4-digit PIN lock) configuration elements
   const [pinLockCode, setPinLockCode] = useState('1234');
@@ -690,10 +520,7 @@ export default function App() {
   ], []);
 
   // Role based access controls (RBAC) parameters: Clerk/Cashier vs Owner Admin
-  const [currentUserRole, setCurrentUserRole] = useState<'owner' | 'cashier'>(() => {
-    return (localStorage.getItem('current_user_role') as 'owner' | 'cashier') || 'owner';
-  });
-  const [staffPermissions, setStaffPermissions] = useState<any>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<'owner' | 'cashier'>('owner');
 
   // Multi business specific products and customers data toggling
   const selectedBusiness = businessProfilesList[activeBusinessIndex];
@@ -707,7 +534,6 @@ export default function App() {
   const [inventoryTab, setInventoryTab] = useState<'catalog' | 'history'>('catalog');
   const [showWholesaleCosts, setShowWholesaleCosts] = useState(false);
   const [showTax, setShowTax] = useState(false);
-  const [isInvoiceExpanded, setIsInvoiceExpanded] = useState(false);
   const [editProdName, setEditProdName] = useState('');
   const [editProdSku, setEditProdSku] = useState('');
   const [editProdStock, setEditProdStock] = useState('0');
@@ -728,7 +554,7 @@ export default function App() {
     let cogsTotal = 0;
 
     customers.forEach((cust) => {
-      (cust.invoices || []).forEach((inv) => {
+      cust.invoices.forEach((inv) => {
         if (inv.transactionType === 'sale') {
           salesTotal += inv.totalAmount;
           paidTotal += inv.amountPaid;
@@ -849,7 +675,7 @@ export default function App() {
     let estimatedProfitToday = 0;
 
     customers.forEach((cust) => {
-      (cust.invoices || []).forEach((inv) => {
+      cust.invoices.forEach((inv) => {
         const invDate = inv.createdAt.split('T')[0];
         if (invDate === todayStr) {
           if (inv.transactionType === 'sale') {
@@ -1246,91 +1072,87 @@ export default function App() {
 
     // Subduct sold commodities from standard catalog stocks if matched!
     // If the product that user sells is not in the inventory list yet, please add it!
-    const nextProducts = [...products];
-    const itemsToProcess = parsedInvoice.items && parsedInvoice.items.length > 0
-      ? parsedInvoice.items
-      : [{ name: parsedInvoice.productName || "General Commodity", quantity: 1, price: Math.max(0, amountVal), total: Math.max(0, amountVal) }];
+    setProducts(prevProds => {
+      const updatedProds = [...prevProds];
+      const itemsToProcess = parsedInvoice.items && parsedInvoice.items.length > 0
+        ? parsedInvoice.items
+        : [{ name: parsedInvoice.productName || "General Commodity", quantity: 1, price: Math.max(0, amountVal), total: Math.max(0, amountVal) }];
 
-    itemsToProcess.forEach(item => {
-      const itemNameClean = (item.name || "General Commodity").trim();
-      const qty = item.quantity || 1;
-      const price = item.price || 0;
+      itemsToProcess.forEach(item => {
+        const itemNameClean = (item.name || "General Commodity").trim();
+        const qty = item.quantity || 1;
+        const price = item.price || 0;
 
-      // Trace match via lowercase trimmed comparison
-      const matchIndex = nextProducts.findIndex(p => p.name.trim().toLowerCase() === itemNameClean.toLowerCase());
+        // Trace match via lowercase trimmed comparison
+        const matchIndex = updatedProds.findIndex(p => p.name.trim().toLowerCase() === itemNameClean.toLowerCase());
+
+        if (matchIndex >= 0) {
+          // Exists: decrease stock
+          updatedProds[matchIndex] = {
+            ...updatedProds[matchIndex],
+            stock: Math.max(0, updatedProds[matchIndex].stock - qty)
+          };
+        } else {
+          // Add it to inventory list if not there
+          const initials = itemNameClean
+            .split(' ')
+            .map(w => w[0] || '')
+            .join('')
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '')
+            .slice(0, 3) || 'SKU';
+          const randomId = Math.floor(100 + Math.random() * 900);
+          const sku = `${initials}-${randomId}`;
+
+          const initialStock = 25; // Good default starting level
+          const stockLeft = Math.max(0, initialStock - qty);
+
+          const newProd: Product = {
+            id: `p_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            name: itemNameClean,
+            sku: sku,
+            stock: stockLeft,
+            price: price,
+            cost_price: Math.round(price * 0.7),
+            minQuantityCount: 5
+          };
+          updatedProds.push(newProd);
+        }
+      });
+
+      return updatedProds;
+    });
+
+    setCustomers(prevCustomers => {
+      const matchIndex = prevCustomers.findIndex(c => c.name.toLowerCase() === matchName.toLowerCase());
 
       if (matchIndex >= 0) {
-        // Exists: decrease stock
-        nextProducts[matchIndex] = {
-          ...nextProducts[matchIndex],
-          stock: Math.max(0, nextProducts[matchIndex].stock - qty)
+        const updated = [...prevCustomers];
+        updated[matchIndex] = {
+          ...updated[matchIndex],
+          activeDebtBalance: updated[matchIndex].activeDebtBalance + debtVal,
+          invoices: [newInvoice, ...updated[matchIndex].invoices]
         };
+        return updated;
       } else {
-        // Add it to inventory list if not there
-        const initials = itemNameClean
-          .split(' ')
-          .map(w => w[0] || '')
-          .join('')
-          .toUpperCase()
-          .replace(/[^A-Z0-9]/g, '')
-          .slice(0, 3) || 'SKU';
-        const randomId = Math.floor(100 + Math.random() * 900);
-        const sku = `${initials}-${randomId}`;
-        
-        const initialStock = 25; // Good default starting level
-        const stockLeft = Math.max(0, initialStock - qty);
-
-        const newProd: Product = {
-          id: `p_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-          name: itemNameClean,
-          sku: sku,
-          stock: stockLeft,
-          price: price,
-          cost_price: Math.round(price * 0.7),
-          minQuantityCount: 5
+        const newCustomer: Customer = {
+          id: "cust_" + Date.now().toString(),
+          name: matchName,
+          activeDebtBalance: debtVal,
+          createdDate: new Date().toISOString().split('T')[0],
+          invoices: [newInvoice]
         };
-        nextProducts.push(newProd);
+        return [...prevCustomers, newCustomer];
       }
     });
 
-    setProducts(nextProducts);
-
-    const matchIndex = customers.findIndex(c => c.name.toLowerCase() === matchName.toLowerCase());
-    let nextCustomers: Customer[];
-
-    if (matchIndex >= 0) {
-      nextCustomers = [...customers];
-      nextCustomers[matchIndex] = {
-        ...nextCustomers[matchIndex],
-        activeDebtBalance: nextCustomers[matchIndex].activeDebtBalance + debtVal,
-        invoices: [newInvoice, ...nextCustomers[matchIndex].invoices]
-      };
-    } else {
-      const newCustomer: Customer = {
-        id: "cust_" + Date.now().toString(),
-        name: matchName,
-        activeDebtBalance: debtVal,
-        createdDate: new Date().toISOString().split('T')[0],
-        invoices: [newInvoice]
-      };
-      nextCustomers = [...customers, newCustomer];
-    }
-
-    setCustomers(nextCustomers);
-
     setSelectedInvoice(newInvoice);
     setActiveScreen('invoice_preview');
-
-    // Auto-align and force instant cloud backup generation so public share links
-    // work immediately even if the viewer opens the link immediately.
-    triggerDailyAutomatedBackup(true, nextCustomers, nextProducts).catch((err) => {
-      console.warn("[BACKUP] Instant post-invoice backup auto-sync warning:", err);
-    });
   };
 
   const deleteInvoice = (invoiceId: string) => {
-    if (currentUserRole === 'cashier' && !staffPermissions?.allow_delete_invoices) {
-      alert("⚠️ Role Security Violation: Your staff terminal credentials do not permit deleting invoice historical logs. Please contact the Business Owner / Admin.");
+    if (currentUserRole === 'cashier') {
+      alert("⚠️ Role Security Violation: Cashiers/Clerks do not have credentials to delete invoice historical logs. Please contact the Business Owner / Admin.");
       return;
     }
     setCustomers(prevCustomers => {
@@ -1455,17 +1277,15 @@ export default function App() {
     }
   };
 
-  const triggerDailyAutomatedBackup = async (force: boolean = false, overrideCustomers?: any[], overrideProducts?: any[]): Promise<any> => {
+  const triggerDailyAutomatedBackup = async (force: boolean = false): Promise<any> => {
     if (!userState.authenticated || !userState.email) return;
 
-    setSyncStatus('syncing');
     const email = userState.email;
     const todayStr = new Date().toDateString();
     const lastBackupDate = localStorage.getItem(`last_daily_backup_date_${email}`);
 
     if (lastBackupDate === todayStr && !force) {
       console.log(`[BACKUP ENGINE] Daily automated backup is already completed for today (${todayStr}).`);
-      setSyncStatus('synced');
       return { status: "up_to_date", message: "Backup already complete today." };
     }
 
@@ -1476,8 +1296,8 @@ export default function App() {
         email: email,
         businessProfile: userState.business || null,
         data: {
-          customers: overrideCustomers || customers,
-          products: overrideProducts || products,
+          customers: customers,
+          products: products,
           restockLogs: restockLogs
         }
       };
@@ -1504,7 +1324,7 @@ export default function App() {
       localStorage.setItem(localBackupsKey, JSON.stringify(backupsList));
 
       const token = localStorage.getItem('session_id') || localStorage.getItem('active_session_id') || '';
-      const response = await nodeFetch('/api/backup/save', {
+      const response = await apiFetch('/api/backup/save', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1520,43 +1340,16 @@ export default function App() {
       if (!response.ok) {
         console.warn(`[BACKUP ENGINE] Server write backup returned non-ok status: ${response.status}. Browser local storage backup completed successfully.`);
         localStorage.setItem(`last_daily_backup_date_${email}`, todayStr);
-        setSyncStatus('out_of_sync');
         return { status: "local_success", message: `Saved to local storage. Server returned ${response.status}.` };
       }
 
       const resData = await response.json();
       localStorage.setItem(`last_daily_backup_date_${email}`, todayStr);
       console.log("[BACKUP ENGINE] Successfully synchronized daily bookkeeping ledger backup file:", resData);
-
-      // Apply bidirectionally merged backend data to local state & persist!
-      if (resData && resData.mergedData && resData.mergedData.data) {
-        const { customers: restCust, products: restProd, restockLogs: restLogs } = resData.mergedData.data;
-        
-        isSyncingRef.current = true;
-        
-        if (restCust) {
-          setCustomers(restCust);
-          localStorage.setItem(getStorageKey('customers_records'), JSON.stringify(restCust));
-        }
-        if (restProd) {
-          setProducts(restProd);
-          localStorage.setItem(getStorageKey('products_catalog'), JSON.stringify(restProd));
-        }
-        if (restLogs) {
-          setRestockLogs(restLogs || []);
-        }
-        
-        setTimeout(() => {
-          isSyncingRef.current = false;
-        }, 1000);
-      }
-
-      setSyncStatus('synced');
       return resData;
     } catch (err) {
       console.warn('[BACKUP ENGINE] Automated export handler completed local storage backup natively with server fallback:', err);
       localStorage.setItem(`last_daily_backup_date_${email}`, todayStr);
-      setSyncStatus('offline');
       return { status: "local_success_fallback", error: String(err) };
     }
   };
@@ -1564,7 +1357,6 @@ export default function App() {
   const handleRestoreBackup = (restoredData: { customers: any[], products: any[], restockLogs?: any[] }) => {
     if (!userState.email) return;
 
-    isSyncingRef.current = true;
     if (restoredData.customers) {
       setCustomers(restoredData.customers);
       localStorage.setItem(getStorageKey('customers_records'), JSON.stringify(restoredData.customers));
@@ -1576,12 +1368,9 @@ export default function App() {
     if (restoredData.restockLogs) {
       setRestockLogs(restoredData.restockLogs);
     }
-    setTimeout(() => {
-      isSyncingRef.current = false;
-    }, 1000);
   };
 
-  // Automated background scheduler checking hook on load
+  // Automated background scheduler checking hook
   useEffect(() => {
     if (userState.authenticated && userState.email && customers.length >= 0 && products.length >= 0) {
       const delayTimer = setTimeout(() => {
@@ -1589,16 +1378,12 @@ export default function App() {
       }, 5000);
       return () => clearTimeout(delayTimer);
     }
-  }, [userState.authenticated, userState.email]);
+  }, [userState.authenticated, userState.email, customers.length, products.length]);
 
   // Automated live backup sync scheduler whenever data mutations occur to ensure multi-browser alignment
   const mutationTimerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (isSyncingRef.current) {
-      return;
-    }
     if (userState.authenticated && userState.email && (customers.length > 0 || products.length > 0) && navigator.onLine) {
-      setSyncStatus('out_of_sync');
       if (mutationTimerRef.current) clearTimeout(mutationTimerRef.current);
       mutationTimerRef.current = setTimeout(() => {
         triggerDailyAutomatedBackup(true); // force live backup on the server, ensuring real-time multi-browser consistency
@@ -1608,30 +1393,6 @@ export default function App() {
       if (mutationTimerRef.current) clearTimeout(mutationTimerRef.current);
     };
   }, [customers, products, restockLogs, userState.authenticated, userState.email]);
-
-  // Proactive automatic background ledger synchronization (especially for pulling cashier/staff terminal changes)
-  useEffect(() => {
-    if (userState.authenticated && userState.email && navigator.onLine) {
-      const liveSyncInterval = setInterval(() => {
-        // Only trigger auto background sync if not already syncing
-        if (syncStatus !== 'syncing' && !isSyncingRef.current) {
-          console.log("[SYNC ENGINE] Running automatic periodic background ledger sync with server is live...");
-          triggerDailyAutomatedBackup(true).catch(err => {
-            console.warn("[SYNC ENGINE] Background sync failed silently:", err);
-          });
-        }
-      }, 15000); // Poll/sync every 15 seconds to pull down staff terminal events automatically
-      return () => clearInterval(liveSyncInterval);
-    }
-  }, [userState.authenticated, userState.email, syncStatus]);
-
-  const handleManualSyncAction = async (): Promise<void> => {
-    try {
-      await triggerDailyAutomatedBackup(true);
-    } catch (err) {
-      console.warn("Manual sync action failed:", err);
-    }
-  };
 
   const handleSelectCustomerInvoiceFeed = (custName: string) => {
     const cust = customers.find(c => c.name.toLowerCase() === custName.toLowerCase());
@@ -1818,9 +1579,6 @@ export default function App() {
 
   const handleLogin = (session_id: string, phone_or_email?: string, userObj?: any) => {
     localStorage.setItem('session_id', session_id);
-    localStorage.setItem('current_user_role', 'owner');
-    setCurrentUserRole('owner');
-    setStaffPermissions(null);
     if (phone_or_email) {
       localStorage.setItem('authorized_phone_or_email', phone_or_email);
     }
@@ -1856,54 +1614,13 @@ export default function App() {
     setActiveScreen('dashboard');
   };
 
-  const handleStaffLogin = (session_id: string, staffObj: any, userObj: any) => {
-    localStorage.setItem('session_id', session_id);
-    localStorage.setItem('active_screen', 'dashboard');
-    localStorage.setItem('current_user_role', 'cashier');
-    localStorage.setItem('staff_permissions', JSON.stringify(staffObj));
-    localStorage.setItem('staff_name', staffObj.name_slug);
-    
-    setCurrentUserRole('cashier');
-    setStaffPermissions(staffObj);
-    
-    if (userObj) {
-      const b = userObj.business || {};
-      setUserState(prev => ({
-        ...prev,
-        authenticated: true,
-        onboarded: true,
-        email: userObj.phone_or_email || '',
-        username: `${staffObj.name_slug} @ ${userObj.business_name || userObj.phone_or_email}`,
-        ownerPin: '', // Avoid exposing owner master pin to clerk
-        business: {
-          ...prev.business!,
-          ...b,
-          businessName: b.businessName || userObj.business_name || prev.business?.businessName || '',
-          businessType: b.businessType || userObj.business_type || 'buy_and_sell',
-          phone: b.phone || userObj.phone || userObj.phone_or_email || '',
-          address: b.address || userObj.address || ''
-        }
-      }));
-    } else {
-      setUserState(prev => ({
-        ...prev,
-        authenticated: true,
-        onboarded: true,
-        username: staffObj.name_slug
-      }));
-    }
-    setActiveScreen('dashboard');
-  };
-
   // Permit public navigation screen routes without authenticated sessions
-  const isPublicScreen = ['landing', 'about', 'terms', 'login', 'guest_invoice', 'invoice_preview', 'terminal'].includes(activeScreen);
+  const isPublicScreen = ['landing', 'about', 'terms', 'login', 'guest_invoice'].includes(activeScreen);
 
-  useEffect(() => {
-    if (!userState.authenticated && !isPublicScreen) {
-      // If guest tries to access private views, fallback to landing beautifully
-      setActiveScreen('landing');
-    }
-  }, [userState.authenticated, isPublicScreen]);
+  if (!userState.authenticated && !isPublicScreen) {
+    // If guest tries to access private views, fallback to landing beautifully
+    setActiveScreen('landing');
+  }
 
   if (isLedgerLocked) {
     return (
@@ -2028,456 +1745,349 @@ export default function App() {
     );
   }
 
-  if (window.location.pathname.startsWith('/receipts/token/')) {
-    return (
-      <div className={`min-h-screen ${darkMode ? "bg-[#0B0E1B]" : "bg-slate-50"} flex flex-col font-sans transition-colors duration-300 p-4 md:p-8 justify-start items-center`}>
-        
-        {/* Floating Utility Controls (hidden in print) */}
-        {!loadingSharedInvoice && !sharedInvoiceError && selectedInvoice && (
-          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden animate-fadeIn">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-[#00A6FF]/10 text-[#00A6FF] rounded-xl flex items-center justify-center font-bold">
-                YB
-              </div>
-              <div className="text-left">
-                <h4 className="font-extrabold text-[#0E1338] text-[11px] uppercase tracking-wider">Official Digital Share Portal</h4>
-                <p className="text-[10px] text-gray-400">Review your trade ledger balances and download as PDF receipt.</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-              <button
-                onClick={() => setShowTax(!showTax)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition ${showTax ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-650 hover:bg-gray-50'}`}
-              >
-                {showTax ? 'Disable 7.5% VAT' : 'Enable 7.5% VAT'}
-              </button>
-              <button
-                onClick={() => window.print()}
-                className="px-4 py-1.5 bg-[#00A6FF] hover:bg-[#0095E6] text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer"
-              >
-                <Download className="w-4 h-4" /> Download PDF / Print
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="w-full max-w-2xl">
-          {loadingSharedInvoice && (
-            <div className="text-center py-20 space-y-4">
-              <div className="w-12 h-12 rounded-full border-2 border-[#00A6FF] border-t-transparent animate-spin mx-auto"></div>
-              <p className="text-gray-400 font-medium text-center">Retrieving secure merchant invoice from Yeedem cloud registry...</p>
-            </div>
-          )}
-
-          {sharedInvoiceError && (
-            <div className="bg-white rounded-3xl p-8 shadow-sm border border-red-100 text-center max-w-md mx-auto space-y-4 animate-fadeIn">
-              <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto">
-                <Lock size={32} />
-              </div>
-              <h3 className="text-sm font-bold text-[#0E1338] uppercase tracking-wider">Unresolved Cloud Receipt</h3>
-              <p className="text-gray-400 text-xs leading-relaxed">
-                {sharedInvoiceError}
-              </p>
-              <p className="text-gray-350 text-[10px]/relaxed mt-2 text-center">
-                Ask the merchant to hit the <strong className="text-gray-500">"PWA Back up files now"</strong> button within their dashboard to sync their latest local invoices to the cloud server.
-              </p>
-            </div>
-          )}
-
-          {!loadingSharedInvoice && !sharedInvoiceError && !selectedInvoice && (
-            <div className="text-center py-20 space-y-4">
-              <p className="text-gray-400">Scanning offline index states...</p>
-            </div>
-          )}
-
-          {!loadingSharedInvoice && !sharedInvoiceError && selectedInvoice && (
-            <div className="bg-white rounded-3xl md:shadow-md border border-gray-150/50 overflow-hidden text-left">
-              <InvoiceTheme 
-                invoice={selectedInvoice} 
-                business={sharedBusiness || userState.business} 
-                customers={customers}
-                onUpdateCustomerContact={handleUpdateCustomerContact}
-                onUpdateInvoiceDate={handleUpdateInvoiceDate}
-                onUpdateInvoiceStatus={handleUpdateInvoiceStatus}
-                showTax={showTax}
-                isLoggedIn={false}
-                onRequireSignup={() => {}}
-                isSharedPublicView={true}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={`min-h-screen ${darkMode ? "dark-mode bg-[#0B0E1B]" : "bg-[#F7FAFC]"} flex flex-col font-sans transition-colors duration-300`}>
       
       {/* Fixed Top Header Wrap */}
-      <div className={`fixed top-0 left-0 right-0 z-50 shadow-sm print:hidden ${(activeScreen === 'invoice_preview' && !userState.authenticated) || activeScreen === 'terminal' ? 'hidden': ''}`}>
-          
-          {/* Header Ribbon styled in Primary Deep Navy #0E1338 */}
-          <header className="bg-[#0E1338] h-16 px-6 flex items-center justify-between text-white border-b border-white/5">
-            {/* Left-Aligned Logo Link */}
-            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveScreen(userState.authenticated ? 'dashboard' : 'landing')}>
-              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-md overflow-hidden p-1">
-                <img src={LogoImg} alt="Yeedem Books" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
-              </div>
-              <span className="font-serif font-extrabold tracking-tight text-lg text-white">Yeedem Books</span>
+      <div className="fixed top-0 left-0 right-0 z-50 shadow-sm print:hidden">
+
+        {/* Header Ribbon styled in Primary Deep Navy #0E1338 */}
+        <header className="bg-[#0E1338] h-16 px-6 flex items-center justify-between text-white border-b border-white/5">
+          {/* Left-Aligned Logo Link */}
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveScreen(userState.authenticated ? 'dashboard' : 'landing')}>
+            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-md overflow-hidden p-1">
+              <img src={LogoImg} alt="Yeedem Books" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
             </div>
+            <span className="font-serif font-extrabold tracking-tight text-lg text-white">Yeedem Books</span>
+          </div>
 
-            {/* Nav Links */}
-            <div className="flex items-center gap-3 md:gap-4 font-sans text-xs">
-              {userState.authenticated ? (
-                <nav className="hidden md:flex items-center gap-1 font-medium text-gray-300">
-                  {(!staffPermissions || staffPermissions.allow_create_invoices) && (
-                    <button
-                      onClick={() => setActiveScreen('dashboard')}
-                      className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'dashboard' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
-                    >
-                      Dashboard
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setActiveScreen('invoices')}
-                    className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'invoices' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
-                  >
-                    Invoices
-                  </button>
-                  {(!staffPermissions || staffPermissions.allow_view_customers) && (
-                    <button
-                      onClick={() => setActiveScreen('customers')}
-                      className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'customers' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
-                    >
-                      Customers Directory
-                    </button>
-                  )}
-                  {(!staffPermissions || staffPermissions.allow_view_customers) && (
-                    <button
-                      onClick={() => setActiveScreen('debtors')}
-                      className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'debtors' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
-                    >
-                      Outstanding Debtors
-                    </button>
-                  )}
-                  {(!staffPermissions || staffPermissions.allow_view_inventory) && (
-                    <button
-                      onClick={() => setActiveScreen('products')}
-                      className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'products' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
-                    >
-                      {isService ? 'Services & Rates' : <>Inventory Catalog {lowStockWarnings.length > 0 && <span className="bg-[#D32F2F] text-white px-1.5 text-[9px] rounded-full ml-1 font-sans animate-bounce">{lowStockWarnings.length}</span>}</>}
-                    </button>
-                  )}
-                  {currentUserRole === 'owner' && (
-                    <button
-                      onClick={() => setActiveScreen('profile')}
-                      className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'profile' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
-                    >
-                      Settings
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setIsTourOpen(true)}
-                    className="px-3 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/20 font-bold transition flex items-center gap-1.5 ml-1 animate-pulse"
-                    title="Launch guiding walkthrough setup tour"
-                  >
-                    <HelpCircle className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Interactive Tour</span>
-                  </button>
-                </nav>
-              ) : (
-                <nav className="hidden md:flex items-center gap-1.5 font-medium text-gray-300">
-                  <button
-                    onClick={() => setActiveScreen('landing')}
-                    className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'landing' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
-                  >
-                    Home
-                  </button>
-                  <button
-                    onClick={() => setActiveScreen('guest_invoice')}
-                    className={`px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 font-bold ${activeScreen === 'guest_invoice' ? 'bg-[#00A6FF] text-white' : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/20'}`}
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Quick Invoice Generator</span>
-                  </button>
-                  <button
-                    onClick={() => setActiveScreen('about')}
-                    className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'about' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
-                  >
-                    About Platform
-                  </button>
-                  <button
-                    onClick={() => setActiveScreen('terms')}
-                    className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'terms' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
-                  >
-                    Terms of Service
-                  </button>
-                  <button
-                    onClick={() => setActiveScreen('login')}
-                    className="px-4 py-1.5 rounded-xl bg-white text-[#0E1338] font-bold hover:bg-gray-100 transition"
-                  >
-                    Login
-                  </button>
-                </nav>
-              )}
-
-              {userState.authenticated && (
-                <>
-                  <span className="hidden md:inline h-4 w-[1px] bg-white/20"></span>
-
-                  <button
-                    onClick={() => {
-                      setIsLedgerLocked(true);
-                      setPinAttemptString('');
-                      setPinErrorFlash(false);
-                      alert("🔴 SafeGuard padlock engaged! Secure authorization PIN is now required.");
-                    }}
-                    className="p-1 px-2.5 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/20 text-rose-400 hover:text-rose-300 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-bold"
-                    title="Engage safe screen lock"
-                  >
-                    <Lock className="w-3.5 h-3.5 animate-pulse" />
-                    <span className="hidden sm:inline">Lock Books</span>
-                  </button>
-
-                  <button
-                    onClick={handleLogout}
-                    className="hidden md:flex p-1 px-2.5 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/20 text-rose-400 hover:text-rose-300 rounded-lg transition-all cursor-pointer items-center gap-1.5 text-[10px] font-bold ml-1.5"
-                    title="Logout Account"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Logout</span>
-                  </button>
-
-                </>
-              )}
-
-              <span className="hidden md:inline h-4 w-[1px] bg-white/20"></span>
-
-              {!userState.authenticated && (
+          {/* Nav Links */}
+          <div className="flex items-center gap-3 md:gap-4 font-sans text-xs">
+            {userState.authenticated ? (
+              <nav className="hidden md:flex items-center gap-1 font-medium text-gray-300">
                 <button
-                  onClick={() => setActiveScreen('login')}
-                  className="hidden md:block bg-[#00A6FF] text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-600 transition tracking-tight"
+                  onClick={() => setActiveScreen('dashboard')}
+                  className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'dashboard' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
                 >
-                  Create Account / Sign In
+                  Dashboard
                 </button>
-              )}
-
-              {userState.authenticated && (
-                <div className="flex items-center gap-2 relative">
-                
-                {/* Database SSL Indicator (from Footer sync metrics) */}
-                <div className="hidden sm:flex items-center" title="Server Connection Secure">
-                  <span className="w-2.5 h-2.5 bg-[#10B981] rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.7)]"></span>
-                </div>
-
-                {/* Aggregated Notification center and flashing low stock warnings */}
-                <div 
-                  className="relative p-2 hover:bg-white/10 rounded-lg transition cursor-pointer select-none"
-                  onClick={() => {
-                    const transitionTo = !isNotificationsOpen;
-                    setIsNotificationsOpen(transitionTo);
-                    if (!transitionTo) {
-                      // Synchronise read notifications state on close / external tap
-                      console.log("Simulating AJAX background fetch: {% url 'core:mark_notifications_read' %}");
-                    }
-                  }}
-                  title={`${unreadAlertCount} Alert warning alarms pending`}
+                <button
+                  onClick={() => setActiveScreen('invoices')}
+                  className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'invoices' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
                 >
-                  <Bell className="w-5 h-5 text-white" />
-                  {unreadAlertCount > 0 && (
-                    <span className={`absolute -top-0.5 -right-0.5 bg-[#D32F2F] text-white text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center border border-[#0E1338] ${lowStockWarnings.length > 0 ? 'animate-bounce animate-pulse' : ''}`}>
-                      {unreadAlertCount}
-                    </span>
-                  )}
-                </div>
+                  Invoices
+                </button>
+                <button
+                  onClick={() => setActiveScreen('customers')}
+                  className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'customers' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
+                >
+                  Customers Directory
+                </button>
+                <button
+                  onClick={() => setActiveScreen('debtors')}
+                  className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'debtors' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
+                >
+                  Outstanding Debtors
+                </button>
+                <button
+                  onClick={() => setActiveScreen('products')}
+                  className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'products' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
+                >
+                  {isService ? 'Services & Rates' : <>Inventory Catalog {lowStockWarnings.length > 0 && <span className="bg-[#D32F2F] text-white px-1.5 text-[9px] rounded-full ml-1 font-sans animate-bounce">{lowStockWarnings.length}</span>}</>}
+                </button>
+                <button
+                  onClick={() => setActiveScreen('profile')}
+                  className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'profile' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
+                >
+                  Settings
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsTourOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/20 font-bold transition flex items-center gap-1.5 ml-1 animate-pulse"
+                  title="Launch guiding walkthrough setup tour"
+                >
+                  <HelpCircle className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Interactive Tour</span>
+                </button>
+              </nav>
+            ) : (
+              <nav className="hidden md:flex items-center gap-1.5 font-medium text-gray-300">
+                <button
+                  onClick={() => setActiveScreen('landing')}
+                  className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'landing' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
+                >
+                  Home
+                </button>
+                <button
+                  onClick={() => setActiveScreen('about')}
+                  className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'about' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
+                >
+                  About Platform
+                </button>
+                <button
+                  onClick={() => setActiveScreen('terms')}
+                  className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'terms' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
+                >
+                  Terms of Service
+                </button>
+              </nav>
+            )}
 
-                {/* Interactive notification dropdown panel list */}
-                {isNotificationsOpen && (
-                  <div className="fixed md:absolute right-4 md:right-0 left-4 md:left-auto top-[72px] md:top-11 bg-white border border-gray-150 rounded-2xl w-auto md:w-85 max-w-[calc(100vw-32px)] md:max-w-none text-gray-800 shadow-2xl z-50 text-xs overflow-hidden animate-slideIn">
-                    {/* HEADER BLOCK: Titled 'Dynamic Alerts (X)' */}
-                    <div className="bg-[#0E1338] text-white px-4 py-3 pb-3.5 font-bold flex items-center justify-between border-b border-white/5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
-                        <span>Dynamic Alerts ({unreadAlertCount})</span>
-                      </div>
-                      <button 
-                        onClick={() => {
-                          setIsNotificationsOpen(false);
-                          console.log("Dismissal synced with background route core:mark_notifications_read");
-                        }} 
-                        className="text-gray-400 hover:text-white p-1 hover:bg-white/5 rounded-lg" 
-                        title="Close"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
+            {userState.authenticated && (
+              <>
+                <span className="hidden md:inline h-4 w-[1px] bg-white/20"></span>
+
+                <button
+                  onClick={() => {
+                    setIsLedgerLocked(true);
+                    setPinAttemptString('');
+                    setPinErrorFlash(false);
+                    alert("🔴 SafeGuard padlock engaged! Secure authorization PIN is now required.");
+                  }}
+                  className="p-1 px-2.5 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/20 text-rose-400 hover:text-rose-300 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-bold"
+                  title="Engage safe screen lock"
+                >
+                  <Lock className="w-3.5 h-3.5 animate-pulse" />
+                  <span className="hidden sm:inline">Lock Books</span>
+                </button>
+
+                <button
+                  onClick={handleLogout}
+                  className="hidden md:flex p-1 px-2.5 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/20 text-rose-400 hover:text-rose-300 rounded-lg transition-all cursor-pointer items-center gap-1.5 text-[10px] font-bold ml-1.5"
+                  title="Logout Account"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Logout</span>
+                </button>
+
+              </>
+            )}
+
+            <span className="hidden md:inline h-4 w-[1px] bg-white/20"></span>
+
+            {!userState.authenticated && (
+              <button
+                onClick={() => setActiveScreen('login')}
+                className="hidden md:block bg-[#00A6FF] text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-600 transition tracking-tight"
+              >
+                Create Account / Sign In
+              </button>
+            )}
+
+            {userState.authenticated && (
+              <div className="flex items-center gap-2 relative">
+
+              {/* Database SSL Indicator (from Footer sync metrics) */}
+              <div className="hidden sm:flex items-center" title="Server Connection Secure">
+                <span className="w-2.5 h-2.5 bg-[#10B981] rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.7)]"></span>
+              </div>
+
+              {/* Aggregated Notification center and flashing low stock warnings */}
+              <div
+                className="relative p-2 hover:bg-white/10 rounded-lg transition cursor-pointer select-none"
+                onClick={() => {
+                  const transitionTo = !isNotificationsOpen;
+                  setIsNotificationsOpen(transitionTo);
+                  if (!transitionTo) {
+                    // Synchronise read notifications state on close / external tap
+                    console.log("Simulating AJAX background fetch: {% url 'core:mark_notifications_read' %}");
+                  }
+                }}
+                title={`${unreadAlertCount} Alert warning alarms pending`}
+              >
+                <Bell className="w-5 h-5 text-white" />
+                {unreadAlertCount > 0 && (
+                  <span className={`absolute -top-0.5 -right-0.5 bg-[#D32F2F] text-white text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center border border-[#0E1338] ${lowStockWarnings.length > 0 ? 'animate-bounce animate-pulse' : ''}`}>
+                    {unreadAlertCount}
+                  </span>
+                )}
+              </div>
+
+              {/* Interactive notification dropdown panel list */}
+              {isNotificationsOpen && (
+                <div className="fixed md:absolute right-4 md:right-0 left-4 md:left-auto top-[72px] md:top-11 bg-white border border-gray-150 rounded-2xl w-auto md:w-85 max-w-[calc(100vw-32px)] md:max-w-none text-gray-800 shadow-2xl z-50 text-xs overflow-hidden animate-slideIn">
+                  {/* HEADER BLOCK: Titled 'Dynamic Alerts (X)' */}
+                  <div className="bg-[#0E1338] text-white px-4 py-3 pb-3.5 font-bold flex items-center justify-between border-b border-white/5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                      <span>Dynamic Alerts ({unreadAlertCount})</span>
                     </div>
+                    <button
+                      onClick={() => {
+                        setIsNotificationsOpen(false);
+                        console.log("Dismissal synced with background route core:mark_notifications_read");
+                      }}
+                      className="text-gray-400 hover:text-white p-1 hover:bg-white/5 rounded-lg"
+                      title="Close"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
 
-                    {/* LIST CATEGORIES IN HIGH CONTRAST */}
-                    <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
-                      
-                      {unreadAlertCount > 0 ? (
-                        <div className="divide-y divide-gray-150">
-                          
-                          {/* SECTION 1: Stock Warning Items */}
-                          <div className="bg-white p-3 space-y-2">
-                            <div className="flex items-center justify-between px-1.5 pb-1 border-b border-gray-50">
-                              <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider">Stock Warning Items</span>
-                              <span className="px-1.5 py-0.5 bg-red-50 text-red-600 font-extrabold text-[9px] rounded border border-red-100 italic">LOW THRESHOLD</span>
-                            </div>
-                            
-                            {lowStockWarnings.length > 0 ? (
-                              <div className="space-y-1.5">
-                                {lowStockWarnings.map(p => (
-                                  <div key={`stock_${p.id}`} className="p-2.5 bg-red-50/20 hover:bg-red-50 rounded-xl border border-red-100/40 flex flex-col gap-1.5 transition animate-slideIn">
-                                    <div className="flex items-start gap-2">
-                                      <AlertTriangle className="w-3.5 h-3.5 text-[#D32F2F] shrink-0 mt-0.5 animate-pulse" />
-                                      <div className="flex-1 min-w-0">
-                                        <p className="font-bold text-gray-900 truncate">Stock: {p.name}</p>
-                                        <p className="text-[10px] text-gray-500 font-mono mt-0.5 leading-none">
-                                          Left: <span className="text-red-600 font-bold">{p.stock}</span> units | Min: {p.minQuantityCount}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <div className="flex justify-start pl-5.5">
-                                      <button 
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleRestockProduct(p.id, 10);
-                                          console.log(`AJAX POST request dispatched to core:product_edit for ID ${p.id}. increment: 10`);
-                                        }}
-                                        className="px-2 py-0.5 bg-[#00A6FF]/10 hover:bg-[#00A6FF]/20 text-[#00A6FF] text-[9px] font-extrabold rounded-full transition flex items-center gap-1 border border-[#00A6FF]/10 cursor-pointer"
-                                      >
-                                        Restock +10 Units
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-[10px] text-gray-400 italic px-1.5 font-medium">✓ All items reside above warning thresholds.</p>
-                            )}
+                  {/* LIST CATEGORIES IN HIGH CONTRAST */}
+                  <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
+
+                    {unreadAlertCount > 0 ? (
+                      <div className="divide-y divide-gray-150">
+
+                        {/* SECTION 1: Stock Warning Items */}
+                        <div className="bg-white p-3 space-y-2">
+                          <div className="flex items-center justify-between px-1.5 pb-1 border-b border-gray-50">
+                            <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider">Stock Warning Items</span>
+                            <span className="px-1.5 py-0.5 bg-red-50 text-red-600 font-extrabold text-[9px] rounded border border-red-100 italic">LOW THRESHOLD</span>
                           </div>
 
-                          {/* SECTION 2: Debt Aging Notes */}
-                          <div className="bg-gray-50/50 p-3 space-y-2">
-                            <div className="flex items-center justify-between px-1.5 pb-1 border-b border-gray-100">
-                              <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider">Debt Aging Notes</span>
-                              <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 font-extrabold text-[9px] rounded border border-amber-100">OUTSTANDING</span>
-                            </div>
-
-                            {debtorAlerts.length > 0 ? (
-                              <div className="space-y-1.5">
-                                {debtorAlerts.map(d => (
-                                  <div key={`debt_${d.id}`} className="p-2.5 bg-amber-50/10 hover:bg-amber-50/30 rounded-xl border border-amber-100/30 flex items-start gap-2.5 transition">
-                                    <Users className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                          {lowStockWarnings.length > 0 ? (
+                            <div className="space-y-1.5">
+                              {lowStockWarnings.map(p => (
+                                <div key={`stock_${p.id}`} className="p-2.5 bg-red-50/20 hover:bg-red-50 rounded-xl border border-red-100/40 flex flex-col gap-1.5 transition animate-slideIn">
+                                  <div className="flex items-start gap-2">
+                                    <AlertTriangle className="w-3.5 h-3.5 text-[#D32F2F] shrink-0 mt-0.5 animate-pulse" />
                                     <div className="flex-1 min-w-0">
-                                      <p className="font-bold text-gray-900 truncate">{d.name}: Outstanding {formatNaira(d.balance)}</p>
+                                      <p className="font-bold text-gray-900 truncate">Stock: {p.name}</p>
                                       <p className="text-[10px] text-gray-500 font-mono mt-0.5 leading-none">
-                                        ({d.dueText})
+                                        Left: <span className="text-red-600 font-bold">{p.stock}</span> units | Min: {p.minQuantityCount}
                                       </p>
                                     </div>
                                   </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-[10px] text-gray-400 italic px-1.5 font-medium">✓ No outstanding aging balances on file.</p>
-                            )}
+                                  <div className="flex justify-start pl-5.5">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRestockProduct(p.id, 10);
+                                        console.log(`AJAX POST request dispatched to core:product_edit for ID ${p.id}. increment: 10`);
+                                      }}
+                                      className="px-2 py-0.5 bg-[#00A6FF]/10 hover:bg-[#00A6FF]/20 text-[#00A6FF] text-[9px] font-extrabold rounded-full transition flex items-center gap-1 border border-[#00A6FF]/10 cursor-pointer"
+                                    >
+                                      Restock +10 Units
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-gray-400 italic px-1.5 font-medium">✓ All items reside above warning thresholds.</p>
+                          )}
+                        </div>
+
+                        {/* SECTION 2: Debt Aging Notes */}
+                        <div className="bg-gray-50/50 p-3 space-y-2">
+                          <div className="flex items-center justify-between px-1.5 pb-1 border-b border-gray-100">
+                            <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider">Debt Aging Notes</span>
+                            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 font-extrabold text-[9px] rounded border border-amber-100">OUTSTANDING</span>
                           </div>
 
+                          {debtorAlerts.length > 0 ? (
+                            <div className="space-y-1.5">
+                              {debtorAlerts.map(d => (
+                                <div key={`debt_${d.id}`} className="p-2.5 bg-amber-50/10 hover:bg-amber-50/30 rounded-xl border border-amber-100/30 flex items-start gap-2.5 transition">
+                                  <Users className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-gray-900 truncate">{d.name}: Outstanding {formatNaira(d.balance)}</p>
+                                    <p className="text-[10px] text-gray-500 font-mono mt-0.5 leading-none">
+                                      ({d.dueText})
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-gray-400 italic px-1.5 font-medium">✓ No outstanding aging balances on file.</p>
+                          )}
                         </div>
-                      ) : (
-                        <div className="p-6 text-center bg-[#F7FAFC] border-t border-gray-100 flex flex-col items-center justify-center">
-                          <div className="w-10 h-10 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-500 mb-2 border border-emerald-100">
-                            <Check className="w-5 h-5" />
-                          </div>
-                          <p className="font-bold text-gray-800 text-xs">All caught up!</p>
-                          <p className="text-[10px] text-gray-400 max-w-[200px] mt-0.5">
-                            Your stock levels and ledger balances look great.
-                          </p>
-                        </div>
-                      )}
 
-                    </div>
-                  </div>
-                )}
-
-              </div>
-              )}
-
-              {userState.authenticated && (
-                /* Quick Record Standard Addition */
-                <button
-                  onClick={() => {
-                    setActiveScreen('dashboard');
-                    setTimeout(() => {
-                      const element = document.getElementById('smart-widget');
-                      if (element) {
-                        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                      }
-                    }, 150);
-                  }}
-                  className="w-9 h-9 bg-[#00A6FF] hover:bg-opacity-90 active:scale-95 text-white font-bold rounded-xl flex items-center justify-center transition shadow-sm"
-                  title="Record Manual Entry"
-                >
-                  <span className="text-lg font-bold">+</span>
-                </button>
-              )}
-
-              {/* Hamburger menu button - HIDDEN ON DESKTOP COHESION USING md:hidden */}
-              <button
-                onClick={() => setIsSideMenuOpen(true)}
-                className="md:hidden flex flex-col justify-between w-5 h-3.5 cursor-pointer hover:opacity-85 transition py-0.5"
-                title="Open Navigation Menu"
-              >
-                <div className="h-[2px] bg-white w-full rounded-full"></div>
-                <div className="h-[2px] bg-white w-full rounded-full"></div>
-                <div className="h-[2px] bg-white w-full rounded-full"></div>
-              </button>
-            </div>
-          </header>
-
-          {/* Dynamic Floating metrics Ribbon bar dashboard */}
-          {userState.authenticated && (
-            <div className={`bg-white border-b border-gray-150 transition-all duration-300 shadow-sm ${isScrolled ? 'py-1 sm:py-1.5 px-6' : 'py-3 px-6'}`}>
-              <div className="max-w-7xl mx-auto grid grid-cols-3 gap-2 items-center justify-items-center text-center">
-                <div className="flex flex-col items-center">
-                  <span className={`text-[#4A5568] uppercase font-bold tracking-wider transition-all duration-300 ${isScrolled ? 'text-[8px] sm:text-[9px]' : 'text-[9px] sm:text-[10px]'}`}>Total Sales</span>
-                  <span className={`font-extrabold text-[#0E1338] transition-all duration-300 ${isScrolled ? 'text-xs sm:text-xs mt-0' : 'text-xs sm:text-sm mt-0.5'}`}>
-                    {formatNaira(calculatedMetrics.salesTotal)}
-                  </span>
-                </div>
-
-                <div className="flex flex-col items-center border-x border-gray-100 w-full">
-                  <span className={`text-[#4A5568] uppercase font-bold tracking-wider transition-all duration-300 ${isScrolled ? 'text-[8px] sm:text-[9px]' : 'text-[9px] sm:text-[10px]'}`}>Paid</span>
-                  <span className={`font-extrabold text-[#0E1338] transition-all duration-300 ${isScrolled ? 'text-xs sm:text-xs mt-0' : 'text-xs sm:text-sm mt-0.5'}`}>
-                    {formatNaira(calculatedMetrics.paidTotal)}
-                  </span>
-                </div>
-
-                <div 
-                  onClick={() => setActiveScreen('debtors')}
-                  className="flex flex-col items-center cursor-pointer group hover:opacity-80 transition"
-                  title="Click to view full debtors list"
-                >
-                  <span className={`text-[#4A5568] uppercase font-bold tracking-wider group-hover:underline transition-all duration-300 ${isScrolled ? 'text-[8px] sm:text-[9px]' : 'text-[9px] sm:text-[10px]'}`}>Debt</span>
-                  <span className={`font-extrabold text-[#D32F2F] transition-all duration-300 ${isScrolled ? 'text-xs sm:text-xs mt-0' : 'text-xs sm:text-sm mt-0.5'}`}>
-                    {calculatedMetrics.outstandingTotal === 0 ? (
-                      <>{formatNaira(0)}</>
+                      </div>
                     ) : (
-                      <>-{formatNaira(calculatedMetrics.outstandingTotal)}</>
+                      <div className="p-6 text-center bg-[#F7FAFC] border-t border-gray-100 flex flex-col items-center justify-center">
+                        <div className="w-10 h-10 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-500 mb-2 border border-emerald-100">
+                          <Check className="w-5 h-5" />
+                        </div>
+                        <p className="font-bold text-gray-800 text-xs">All caught up!</p>
+                        <p className="text-[10px] text-gray-400 max-w-[200px] mt-0.5">
+                          Your stock levels and ledger balances look great.
+                        </p>
+                      </div>
                     )}
-                  </span>
+
+                  </div>
                 </div>
+              )}
+
+            </div>
+            )}
+
+            {userState.authenticated && (
+              /* Quick Record Standard Addition */
+              <button
+                onClick={() => {
+                  setActiveScreen('dashboard');
+                  setTimeout(() => {
+                    const element = document.getElementById('smart-widget');
+                    if (element) {
+                      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }, 150);
+                }}
+                className="w-9 h-9 bg-[#00A6FF] hover:bg-opacity-90 active:scale-95 text-white font-bold rounded-xl flex items-center justify-center transition shadow-sm"
+                title="Record Manual Entry"
+              >
+                <span className="text-lg font-bold">+</span>
+              </button>
+            )}
+
+            {/* Hamburger menu button - HIDDEN ON DESKTOP COHESION USING md:hidden */}
+            <button
+              onClick={() => setIsSideMenuOpen(true)}
+              className="md:hidden flex flex-col justify-between w-5 h-3.5 cursor-pointer hover:opacity-85 transition py-0.5"
+              title="Open Navigation Menu"
+            >
+              <div className="h-[2px] bg-white w-full rounded-full"></div>
+              <div className="h-[2px] bg-white w-full rounded-full"></div>
+              <div className="h-[2px] bg-white w-full rounded-full"></div>
+            </button>
+          </div>
+        </header>
+
+        {/* Dynamic Floating metrics Ribbon bar dashboard */}
+        {userState.authenticated && (
+          <div className={`bg-white border-b border-gray-150 transition-all duration-300 shadow-sm ${isScrolled ? 'py-1 sm:py-1.5 px-6' : 'py-3 px-6'}`}>
+            <div className="max-w-7xl mx-auto grid grid-cols-3 gap-2 items-center justify-items-center text-center">
+              <div className="flex flex-col items-center">
+                <span className={`text-[#4A5568] uppercase font-bold tracking-wider transition-all duration-300 ${isScrolled ? 'text-[8px] sm:text-[9px]' : 'text-[9px] sm:text-[10px]'}`}>Total Sales</span>
+                <span className={`font-extrabold text-[#0E1338] transition-all duration-300 ${isScrolled ? 'text-xs sm:text-xs mt-0' : 'text-xs sm:text-sm mt-0.5'}`}>
+                  {formatNaira(calculatedMetrics.salesTotal)}
+                </span>
+              </div>
+
+              <div className="flex flex-col items-center border-x border-gray-100 w-full">
+                <span className={`text-[#4A5568] uppercase font-bold tracking-wider transition-all duration-300 ${isScrolled ? 'text-[8px] sm:text-[9px]' : 'text-[9px] sm:text-[10px]'}`}>Paid</span>
+                <span className={`font-extrabold text-[#0E1338] transition-all duration-300 ${isScrolled ? 'text-xs sm:text-xs mt-0' : 'text-xs sm:text-sm mt-0.5'}`}>
+                  {formatNaira(calculatedMetrics.paidTotal)}
+                </span>
+              </div>
+
+              <div
+                onClick={() => setActiveScreen('debtors')}
+                className="flex flex-col items-center cursor-pointer group hover:opacity-80 transition"
+                title="Click to view full debtors list"
+              >
+                <span className={`text-[#4A5568] uppercase font-bold tracking-wider group-hover:underline transition-all duration-300 ${isScrolled ? 'text-[8px] sm:text-[9px]' : 'text-[9px] sm:text-[10px]'}`}>Debt</span>
+                <span className={`font-extrabold text-[#D32F2F] transition-all duration-300 ${isScrolled ? 'text-xs sm:text-xs mt-0' : 'text-xs sm:text-sm mt-0.5'}`}>
+                  {calculatedMetrics.outstandingTotal === 0 ? (
+                    <>{formatNaira(0)}</>
+                  ) : (
+                    <>-{formatNaira(calculatedMetrics.outstandingTotal)}</>
+                  )}
+                </span>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+      </div>
 
       {/* Spacer offset for the fixed headers */}
-      <div className={`transition-all duration-300 print:hidden ${(activeScreen === 'invoice_preview' && !userState.authenticated) || activeScreen === 'terminal' ? 'h-0' : (isScrolled ? (userState.authenticated ? 'h-24' : 'h-16') : (userState.authenticated ? 'h-28' : 'h-20'))}`}></div>
+      <div className={`transition-all duration-300 print:hidden ${isScrolled ? (userState.authenticated ? 'h-24' : 'h-16') : (userState.authenticated ? 'h-28' : 'h-20')}`}></div>
 
       {/* Primary Deep Navy (#0E1338) mobile drawer with core Django view URL patterns */}
       {isSideMenuOpen && (
@@ -2578,17 +2188,6 @@ export default function App() {
 
                     <button
                       onClick={() => {
-                        setActiveScreen('guest_invoice');
-                        setIsSideMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-bold transition ${activeScreen === 'guest_invoice' ? 'bg-[#00A6FF] text-white' : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/20'}`}
-                    >
-                      <Sparkles className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
-                      <span>Quick Invoice Generator</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
                         setActiveScreen('about');
                         setIsSideMenuOpen(false);
                       }}
@@ -2631,18 +2230,16 @@ export default function App() {
                 ) : (
                   <>
                     {/* 1. Dashboard */}
-                    {(!staffPermissions || staffPermissions.allow_create_invoices) && (
-                      <button
-                        onClick={() => {
-                          setActiveScreen('dashboard');
-                          setIsSideMenuOpen(false);
-                        }}
-                        className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-bold transition ${activeScreen === 'dashboard' ? 'bg-[#00A6FF] text-white' : 'hover:bg-white/5 text-gray-200'}`}
-                      >
-                        <BookOpen className={`w-4 h-4 ${activeScreen === 'dashboard' ? 'text-white' : 'text-gray-400'}`} />
-                        <span>Dashboard</span>
-                      </button>
-                    )}
+                    <button
+                      onClick={() => {
+                        setActiveScreen('dashboard');
+                        setIsSideMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-bold transition ${activeScreen === 'dashboard' ? 'bg-[#00A6FF] text-white' : 'hover:bg-white/5 text-gray-200'}`}
+                    >
+                      <BookOpen className={`w-4 h-4 ${activeScreen === 'dashboard' ? 'text-white' : 'text-gray-400'}`} />
+                      <span>Dashboard</span>
+                    </button>
 
                     {/* 2. Invoices Registry */}
                     <button
@@ -2657,59 +2254,51 @@ export default function App() {
                     </button>
 
                     {/* 3. Debtors */}
-                    {(!staffPermissions || staffPermissions.allow_view_customers) && (
-                      <button
-                        onClick={() => {
-                          setActiveScreen('customers');
-                          setIsSideMenuOpen(false);
-                        }}
-                        className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-bold transition ${activeScreen === 'customers' ? 'bg-[#00A6FF] text-white' : 'hover:bg-white/5 text-gray-200'}`}
-                      >
-                        <Users className={`w-4 h-4 ${activeScreen === 'customers' ? 'text-white' : 'text-gray-400'}`} />
-                        <span>Customers Directory</span>
-                      </button>
-                    )}
+                    <button
+                      onClick={() => {
+                        setActiveScreen('customers');
+                        setIsSideMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-bold transition ${activeScreen === 'customers' ? 'bg-[#00A6FF] text-white' : 'hover:bg-white/5 text-gray-200'}`}
+                    >
+                      <Users className={`w-4 h-4 ${activeScreen === 'customers' ? 'text-white' : 'text-gray-400'}`} />
+                      <span>Customers Directory</span>
+                    </button>
 
-                    {(!staffPermissions || staffPermissions.allow_view_customers) && (
-                      <button
-                        onClick={() => {
-                          setActiveScreen('debtors');
-                          setIsSideMenuOpen(false);
-                        }}
-                        className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-bold transition ${activeScreen === 'debtors' ? 'bg-[#00A6FF] text-white' : 'hover:bg-white/5 text-gray-200'}`}
-                      >
-                        <TrendingUp className={`w-4 h-4 ${activeScreen === 'debtors' ? 'text-white' : 'text-gray-404'}`} />
-                        <span>Outstanding Debts</span>
-                      </button>
-                    )}
+                    <button
+                      onClick={() => {
+                        setActiveScreen('debtors');
+                        setIsSideMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-bold transition ${activeScreen === 'debtors' ? 'bg-[#00A6FF] text-white' : 'hover:bg-white/5 text-gray-200'}`}
+                    >
+                      <TrendingUp className={`w-4 h-4 ${activeScreen === 'debtors' ? 'text-white' : 'text-gray-404'}`} />
+                      <span>Outstanding Debts</span>
+                    </button>
 
                     {/* 4. Products */}
-                    {(!staffPermissions || staffPermissions.allow_view_inventory) && (
-                      <button
-                        onClick={() => {
-                          setActiveScreen('products');
-                          setIsSideMenuOpen(false);
-                        }}
-                        className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-bold transition ${activeScreen === 'products' ? 'bg-[#00A6FF] text-white' : 'hover:bg-white/5 text-gray-200'}`}
-                      >
-                        <Package className={`w-4 h-4 ${activeScreen === 'products' ? 'text-white' : 'text-gray-400'}`} />
-                        <span>{isService ? 'Services & Rates' : 'Inventory Stock'}</span>
-                      </button>
-                    )}
+                    <button
+                      onClick={() => {
+                        setActiveScreen('products');
+                        setIsSideMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-bold transition ${activeScreen === 'products' ? 'bg-[#00A6FF] text-white' : 'hover:bg-white/5 text-gray-200'}`}
+                    >
+                      <Package className={`w-4 h-4 ${activeScreen === 'products' ? 'text-white' : 'text-gray-400'}`} />
+                      <span>{isService ? 'Services & Rates' : 'Inventory Stock'}</span>
+                    </button>
 
                     {/* 5. Profile Settings */}
-                    {currentUserRole === 'owner' && (
-                      <button
-                        onClick={() => {
-                          setActiveScreen('profile');
-                          setIsSideMenuOpen(false);
-                        }}
-                        className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-bold transition ${activeScreen === 'profile' ? 'bg-[#00A6FF] text-white' : 'hover:bg-white/5 text-gray-200'}`}
-                      >
-                        <Settings className={`w-4 h-4 ${activeScreen === 'profile' ? 'text-white' : 'text-gray-400'}`} />
-                        <span>Business Settings</span>
-                      </button>
-                    )}
+                    <button
+                      onClick={() => {
+                        setActiveScreen('profile');
+                        setIsSideMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-bold transition ${activeScreen === 'profile' ? 'bg-[#00A6FF] text-white' : 'hover:bg-white/5 text-gray-200'}`}
+                    >
+                      <Settings className={`w-4 h-4 ${activeScreen === 'profile' ? 'text-white' : 'text-gray-400'}`} />
+                      <span>Business Settings</span>
+                    </button>
 
                     {/* Interactive Guided Tour */}
                     <button
@@ -2800,7 +2389,6 @@ export default function App() {
             onFinish={() => setActiveScreen('landing')} 
             onLimitReached={() => setActiveScreen('login')}
             deviceFingerprint={simulatedDeviceFp || deviceFingerprint || 'unknown_fp'}
-            isAuthenticated={userState.authenticated}
           />
         )}
 
@@ -2820,7 +2408,6 @@ export default function App() {
           <div className="space-y-8 animate-fadeIn">
             
             {/* Instant multimodaly parsed Smart widget */}
-            <DashboardQuickActions metrics={calculatedMetrics} />
             <div id="tour-smart-widget">
               <SmartWidget onSaveParsedInvoice={saveInvoice} isService={isService} />
             </div>
@@ -3204,7 +2791,7 @@ export default function App() {
                 </div>
               </div>
 
-              {(currentUserRole === 'owner' || staffPermissions?.allow_view_costs) && (
+              {currentUserRole === 'owner' && (
                 <div className="bg-white rounded-2xl p-6 shadow-sm flex justify-between items-center transition hover:shadow-md border-l-4 border-l-emerald-500">
                   <div className="space-y-1">
                     <span className="text-gray-400 text-xs font-semibold uppercase tracking-wider">True Net Profit</span>
@@ -3322,19 +2909,7 @@ export default function App() {
               
               {/* 1. Add Catalog Product Widget FIRST (Automatic & Manual tabs) */}
               <div className="lg:col-span-5 space-y-4">
-                {currentUserRole === 'cashier' && !staffPermissions?.allow_manage_products ? (
-                  <div className="bg-white p-6 rounded-[24px] shadow-sm border border-gray-100 text-center py-10">
-                    <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <Lock className="w-6 h-6 text-amber-500" />
-                    </div>
-                    <h3 className="font-bold text-gray-800 text-sm">Add Product Restricted</h3>
-                    <p className="text-xs text-gray-400 mt-1 max-w-xs mx-auto">
-                      Your current cashier profile does not have full read-write credentials to alter or append products to the ledger.
-                    </p>
-                  </div>
-                ) : (
-                  <SmartProductWidget onSaveProduct={handleSaveProductCatalog} isService={isService} />
-                )}
+                <SmartProductWidget onSaveProduct={handleSaveProductCatalog} isService={isService} />
               </div>
 
               {/* 2. Active Stock Levels Catalog table */}
@@ -3342,7 +2917,7 @@ export default function App() {
                 <h3 className="font-semibold text-sm uppercase tracking-wider text-gray-900 border-b pb-3 mb-4">Inventory Catalog</h3>
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-end mb-4 gap-3">
                   
-                  {(currentUserRole === 'owner' || staffPermissions?.allow_view_costs) && !isService && inventoryTab === 'catalog' && (
+                  {currentUserRole === 'owner' && !isService && inventoryTab === 'catalog' && (
                     <button 
                       onClick={() => setShowWholesaleCosts(!showWholesaleCosts)}
                       className={`text-xs px-3 py-2 sm:py-1.5 rounded-lg flex items-center justify-center transition-all font-semibold border whitespace-nowrap w-full sm:w-auto ${showWholesaleCosts ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}
@@ -3386,7 +2961,7 @@ export default function App() {
                         <th className="py-2.5">SKU Code</th>
                         <th className="py-2.5">{isService ? 'Service Offered' : 'Produce Item'}</th>
                         {!isService && <th className="py-2.5 text-center">In Stock units</th>}
-                        {!isService && showWholesaleCosts && (currentUserRole === 'owner' || staffPermissions?.allow_view_costs) && <th className="py-2.5 text-right text-indigo-500">Cost Price (₦)</th>}
+                        {!isService && showWholesaleCosts && currentUserRole === 'owner' && <th className="py-2.5 text-right text-indigo-500">Cost Price (₦)</th>}
                         <th className="py-2.5 text-right">{isService ? 'Service Rate (₦)' : 'Unit Price (₦)'}</th>
                         <th className="py-2.5 text-center">Status</th>
                         <th className="py-2.5 text-right">Actions</th>
@@ -3437,7 +3012,7 @@ export default function App() {
                                 )}
                               </td>
                             )}
-                            {!isService && showWholesaleCosts && (currentUserRole === 'owner' || staffPermissions?.allow_view_costs) && (
+                            {!isService && showWholesaleCosts && currentUserRole === 'owner' && (
                               <td className="py-3.5 text-right font-mono font-semibold text-indigo-500">
                                 {isEditing ? (
                                   <input 
@@ -3483,9 +3058,7 @@ export default function App() {
                             </td>
                             <td className="py-3.5 text-right">
                               <div className="flex items-center justify-end gap-1.5">
-                                {currentUserRole === 'cashier' && !staffPermissions?.allow_manage_products ? (
-                                  <span className="text-[10px] text-gray-400 italic">Read-only terminal</span>
-                                ) : isEditing ? (
+                                {isEditing ? (
                                   <>
                                     <button
                                       onClick={() => handleSaveProductEdit(p.id)}
@@ -3589,7 +3162,7 @@ export default function App() {
         )}
 
         {/* PROFILE SETTINGS VIEWPORT */}
-        {activeScreen === 'profile' && currentUserRole === 'owner' && (
+        {activeScreen === 'profile' && (
           <div className="space-y-6 animate-fadeIn">
             <div className="flex items-center justify-between border-b pb-4 mb-4">
               <div>
@@ -3613,10 +3186,10 @@ export default function App() {
             {/* Django Admin Control Console & Settings Choice Tab bar */}
             <div className="flex border-b border-gray-200/40 gap-5 pb-1 mt-4">
               <button
-                onClick={() => setProfileTab('control_desk')}
-                className={`pb-2 text-sm font-extrabold border-b-2 transition-all flex items-center gap-1.5 ${profileTab === 'control_desk' ? 'border-[#00A6FF] text-[#00A6FF]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+                onClick={() => setProfileTab('django_admin')}
+                className={`pb-2 text-sm font-extrabold border-b-2 transition-all flex items-center gap-1.5 ${profileTab === 'django_admin' ? 'border-[#00A6FF] text-[#00A6FF]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
               >
-                📊 Control Desk
+                📊 Django Admin control desk
               </button>
               <button
                 onClick={() => setProfileTab('settings')}
@@ -3626,7 +3199,7 @@ export default function App() {
               </button>
             </div>
 
-            {profileTab === 'control_desk' && (
+            {profileTab === 'django_admin' && (
               <div className="animate-fadeIn">
                 <DjangoAdminController
                   customers={customers}
@@ -3680,15 +3253,8 @@ export default function App() {
                   </div>
                 )}
                 
-                <StaffManagement businessName={userState.business?.businessName} onUnauthorized={handleLogout} isSuspiciousLocked={isSuspiciousLocked} deviceFingerprint={simulatedDeviceFp || deviceFingerprint || 'unknown_fp'} approxRegion={simulatedLocation} currentUserRole={currentUserRole} isAuthenticated={userState.authenticated} />
-                <StaffActivityLog onUnauthorized={handleLogout} isSuspiciousLocked={isSuspiciousLocked} deviceFingerprint={simulatedDeviceFp || deviceFingerprint || 'unknown_fp'} approxRegion={simulatedLocation} currentUserRole={currentUserRole} isAuthenticated={userState.authenticated} />
-                
-                {userState.email && (
-                  <CloseAccountCard 
-                    userEmail={userState.email} 
-                    onAccountDeleted={handleAccountDeleted} 
-                  />
-                )}
+                <StaffManagement businessName={userState.business?.businessName} onUnauthorized={handleLogout} isSuspiciousLocked={isSuspiciousLocked} deviceFingerprint={simulatedDeviceFp || deviceFingerprint || 'unknown_fp'} approxRegion={simulatedLocation} />
+                <StaffActivityLog onUnauthorized={handleLogout} isSuspiciousLocked={isSuspiciousLocked} deviceFingerprint={simulatedDeviceFp || deviceFingerprint || 'unknown_fp'} approxRegion={simulatedLocation} />
               </div>
             )}
           </div>
@@ -3699,7 +3265,6 @@ export default function App() {
           <TerminalView 
             shopSlug={window.location.pathname.split('/')[2]} 
             workerSlug={window.location.pathname.split('/')[3]} 
-            onLoginSuccess={handleStaffLogin}
           />
         )}
 
@@ -3729,8 +3294,6 @@ export default function App() {
                 onDeleteInvoice={deleteInvoice}
                 onEditInvoice={handleEditInvoice}
                 business={userState.business}
-                syncStatus={syncStatus}
-                onTriggerSync={handleManualSyncAction}
               />
             </div>
           </div>
@@ -3763,19 +3326,12 @@ export default function App() {
         )}
 
         {/* INVOICE THEMED PREVIEW VIEWPORT */}
-        {activeScreen === 'invoice_preview' && selectedInvoice && (userState.business || isPublicScreen) && (
-          <div className={`space-y-6 ${isInvoiceExpanded ? 'max-w-4xl' : 'max-w-2xl'} mx-auto animate-fadeIn`}>
+        {activeScreen === 'invoice_preview' && selectedInvoice && userState.business && (
+          <div className="space-y-6 max-w-2xl mx-auto animate-fadeIn">
             <div className="flex flex-col gap-3 border-b pb-4 print:hidden">
               <div className="flex items-center justify-between w-full">
-                <span className="text-[10px] text-gray-500 font-bold tracking-wider uppercase">Active style: {userState.business?.invoiceTemplatePreference || 'modern_blue'}</span>
+                <span className="text-[10px] text-gray-500 font-bold tracking-wider uppercase">Active style: {userState.business.invoiceTemplatePreference}</span>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setIsInvoiceExpanded(!isInvoiceExpanded)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition ${isInvoiceExpanded ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    {isInvoiceExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                    {isInvoiceExpanded ? 'Collapse' : 'Expand'}
-                  </button>
                   <button
                     onClick={() => setShowTax(!showTax)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition ${showTax ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
@@ -3786,8 +3342,7 @@ export default function App() {
                     onClick={() => window.print()}
                     className="px-3 py-1.5 bg-[#00A6FF] hover:bg-opacity-95 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow"
                   >
-                    <Printer className="w-4 h-4" />
-                    One-Click Print
+                    Print / Save PDF
                   </button>
                 </div>
               </div>
@@ -3812,26 +3367,12 @@ export default function App() {
               onUpdateInvoiceDate={handleUpdateInvoiceDate}
               onUpdateInvoiceStatus={handleUpdateInvoiceStatus}
               showTax={showTax}
-              isLoggedIn={userState.authenticated}
-              onRequireSignup={() => setShowOnboardingModal(true)}
-              onTriggerBackup={() => triggerDailyAutomatedBackup(true)}
             />
           </div>
         )}
       </main>
 
-      {/* ONBOARDING MODAL */}
-      {showOnboardingModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <Onboarding onCompleteOnboarding={(...args) => {
-            handleCompleteOnboarding(...args);
-            setShowOnboardingModal(false);
-          }} />
-        </div>
-      )}
-
       {/* Sticky Compact Application Footer styled under premium obsidian charcoal #070914 */}
-      {(activeScreen !== 'invoice_preview' || userState.authenticated) && activeScreen !== 'terminal' && (
       <footer className="bg-[#070914] border-t border-white/5 py-8 px-6 text-xs text-white/70">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6 md:gap-12">
           
@@ -3874,20 +3415,16 @@ export default function App() {
               >
                 Terms of Service
               </button>
-              {currentUserRole === 'owner' && (
-                <>
-                  <span className="text-white/20 select-none">|</span>
-                  <button 
-                    onClick={() => {
-                      setActiveScreen('profile');
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }} 
-                    className={`hover:text-[#00A6FF] hover:underline transition font-semibold ${activeScreen === 'profile' ? 'text-[#00A6FF] underline font-bold' : 'text-gray-300'}`}
-                  >
-                    Settings
-                  </button>
-                </>
-              )}
+              <span className="text-white/20 select-none">|</span>
+              <button
+                onClick={() => {
+                  setActiveScreen('profile');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className={`hover:text-[#00A6FF] hover:underline transition font-semibold ${activeScreen === 'profile' ? 'text-[#00A6FF] underline font-bold' : 'text-gray-300'}`}
+              >
+                Settings
+              </button>
             </div>
             <span className="text-[10px] text-gray-500 mt-1 block">
               A product of Yeedem Tech Innovation Labs
@@ -3907,7 +3444,6 @@ export default function App() {
 
         </div>
       </footer>
-      )}
 
       {/* Interactive Onboarding Tour Overlay */}
       <InteractiveTour
@@ -3920,12 +3456,6 @@ export default function App() {
         }}
         businessName={userState.business?.businessName}
       />
-      {!isOnline && (
-        <div className="fixed top-0 left-0 w-full bg-amber-500 text-white text-center py-3 z-[60] font-bold shadow-lg animate-pulse">
-          ⚠️ You are currently offline. Ledger updates are being cached locally.
-        </div>
-      )}
-      {userState.authenticated && <SyncNotificationChip userEmail={userState.email} onSync={() => triggerDailyAutomatedBackup(true)} />}
       
     </div>
   );

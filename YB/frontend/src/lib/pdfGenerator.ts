@@ -21,8 +21,7 @@ export function generateInvoicePDF(
   business: BusinessProfile,
   customers?: any[],
   isGuestTrial: boolean = false,
-  showTax: boolean = false,
-  returnInstance: boolean = false
+  showTax: boolean = false
 ) {
   const { 
     businessName, 
@@ -758,10 +757,6 @@ export function generateInvoicePDF(
     doc.setTextColor(200, 200, 200);
     doc.setFontSize(40);
     doc.text("YEEDEM BOOK TRIAL", 300, 400, { align: 'center', angle: 45 });
-  }
-
-  if (returnInstance) {
-    return doc as any;
   }
 
   const filename = `${businessName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_invoice_${formattedInvoiceId}.pdf`;

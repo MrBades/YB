@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Invoice, BusinessProfile } from '../types';
 import { generateInvoicePDF } from '../lib/pdfGenerator';
-import BrandingPreviewModal from './BrandingPreviewModal';
 import { 
   Search, 
   Filter, 
@@ -19,9 +18,7 @@ import {
   Receipt,
   Edit2,
   Check,
-  X,
-  Sparkles,
-  RefreshCw
+  X
 } from 'lucide-react';
 
 interface InvoicesListProps {
@@ -30,25 +27,12 @@ interface InvoicesListProps {
   onDeleteInvoice?: (invoiceId: string) => void;
   onEditInvoice?: (invoiceId: string, updated: Partial<Invoice>) => void;
   business?: BusinessProfile;
-  syncStatus?: 'synced' | 'syncing' | 'out_of_sync' | 'offline';
-  onTriggerSync?: () => void;
 }
 
-export default function InvoicesList({ 
-  invoices, 
-  onSelectInvoice, 
-  onDeleteInvoice, 
-  onEditInvoice, 
-  business,
-  syncStatus = 'synced',
-  onTriggerSync
-}: InvoicesListProps) {
+export default function InvoicesList({ invoices, onSelectInvoice, onDeleteInvoice, onEditInvoice, business }: InvoicesListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'sale' | 'expense' | 'payment_on_account'>('all');
   const [debtFilter, setDebtFilter] = useState<'all' | 'unpaid' | 'settled'>('all');
-
-  // Overlap verification states
-  const [previewingInvoice, setPreviewingInvoice] = useState<Invoice | null>(null);
 
   // Edit invoice local states
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
@@ -225,58 +209,14 @@ export default function InvoicesList({
 
       {/* 2. Table Catalog List Layout */}
       <div className="bg-white rounded-[24px] overflow-hidden shadow-sm" id="invoices-ledger-table-boundary">
-        <div className="px-6 py-4.5 bg-[#0E1338] text-white flex items-center justify-between border-b border-white/5 flex-wrap gap-3">
+        <div className="px-6 py-4.5 bg-[#0E1338] text-white flex items-center justify-between border-b border-white/5">
           <div className="flex items-center gap-2">
             <Receipt className="w-5 h-5 text-[#00A6FF]" />
             <h3 className="font-serif font-extrabold text-xs uppercase tracking-wider">Historical General Invoice Registry</h3>
           </div>
-          
-          <div className="flex items-center gap-3">
-            {/* Sync Status Badge Container */}
-            <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2.5 py-1 rounded-full text-[10px] font-mono">
-              {syncStatus === 'syncing' && (
-                <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
-                  <span className="text-blue-400 font-semibold">Syncing...</span>
-                </>
-              )}
-              {syncStatus === 'synced' && (
-                <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  <span className="text-emerald-400 font-semibold">Synced</span>
-                </>
-              )}
-              {syncStatus === 'out_of_sync' && (
-                <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
-                  <span className="text-amber-400 font-semibold">Pending Sync</span>
-                </>
-              )}
-              {syncStatus === 'offline' && (
-                <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
-                  <span className="text-[#FF4A55] font-semibold">Offline</span>
-                </>
-              )}
-              
-              {onTriggerSync && (
-                <button
-                  type="button"
-                  onClick={onTriggerSync}
-                  disabled={syncStatus === 'syncing'}
-                  className="ml-1.5 pl-1.5 border-l border-white/10 text-[#00A6FF] hover:text-white transition disabled:opacity-50 cursor-pointer flex items-center gap-1 font-semibold"
-                  title="Synchronize all sales data with backend cloud server ledger now"
-                >
-                  <RefreshCw className={`w-2.5 h-2.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-                  <span>Sync Now</span>
-                </button>
-              )}
-            </div>
-
-            <span className="text-[10px] font-mono px-2.5 py-1 bg-white/10 rounded-full border border-white/5 text-[#00A6FF]">
-              Verified: {filteredInvoices.length} entries of {invoices.length}
-            </span>
-          </div>
+          <span className="text-[10px] font-mono px-2.5 py-1 bg-white/10 rounded-full border border-white/5 text-[#00A6FF]">
+            Verified: {filteredInvoices.length} entries of {invoices.length}
+          </span>
         </div>
 
         <div className="overflow-x-auto text-xs text-gray-750">
@@ -422,16 +362,6 @@ export default function InvoicesList({
                                   <FileText className="w-3.5 h-3.5 text-indigo-500" /> Export PDF
                                 </button>
                               )}
-                              {business && (
-                                <button
-                                  type="button"
-                                  onClick={() => setPreviewingInvoice(inv)}
-                                  className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-850 hover:text-amber-950 font-extrabold rounded-lg text-[10px] uppercase tracking-wide transition flex items-center gap-1 border border-amber-500/15 cursor-pointer"
-                                  title="Verify branding & live high-fidelity PDF preview"
-                                >
-                                  <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" /> Verify Branding
-                                </button>
-                              )}
                               {onEditInvoice && (
                                 <button
                                   type="button"
@@ -504,15 +434,6 @@ export default function InvoicesList({
           <p className="text-[10px] text-gray-400 font-mono mt-1">Direct debtor settlements</p>
         </div>
       </div>
-
-      {previewingInvoice && business && (
-        <BrandingPreviewModal 
-          isOpen={previewingInvoice !== null} 
-          onClose={() => setPreviewingInvoice(null)} 
-          invoice={previewingInvoice} 
-          business={business}
-        />
-      )}
 
     </div>
   );

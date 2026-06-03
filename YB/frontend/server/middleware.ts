@@ -37,7 +37,7 @@ export const anomalyDetectionMiddleware = (req: Request, res: Response, next: Ne
         if (session) {
             let isMismatched = false;
             if (device_fingerprint && device_fingerprint !== 'unknown_fp' && device_fingerprint !== 'unknown') {
-                if (session.device_fingerprint === 'fp_default_owner' || !session.device_fingerprint || session.device_fingerprint === 'unknown_fp' || session.device_fingerprint === 'unknown') {
+                if (session.device_fingerprint === 'fp_default_owner' || !session.device_fingerprint) {
                     session.device_fingerprint = device_fingerprint;
                     writeDB(db);
                 } else if (device_fingerprint !== 'fp_default_owner' && session.device_fingerprint !== device_fingerprint) {
@@ -77,7 +77,7 @@ export const requireSession = (req: Request, res: Response, next: NextFunction) 
         
         let isMismatched = false;
         if (device_fingerprint && device_fingerprint !== 'unknown_fp' && device_fingerprint !== 'unknown') {
-            if (session.device_fingerprint === 'fp_default_owner' || !session.device_fingerprint || session.device_fingerprint === 'unknown_fp' || session.device_fingerprint === 'unknown') {
+            if (session.device_fingerprint === 'fp_default_owner' || !session.device_fingerprint) {
                 session.device_fingerprint = device_fingerprint;
                 writeDB(db);
             } else if (device_fingerprint !== 'fp_default_owner' && session.device_fingerprint !== device_fingerprint) {
@@ -97,7 +97,6 @@ export const requireSession = (req: Request, res: Response, next: NextFunction) 
         }
         
         (req as any).user_id = session.user_id;
-        (req as any).session = session;
         next();
     } catch (err: any) {
         console.error("Authentication middleware error:", err);

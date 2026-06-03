@@ -1,137 +1,145 @@
 import React, { useState } from 'react';
 import { generateInvoicePDF } from '../lib/pdfGenerator';
 import { BusinessProfile } from '../types';
-import { ArrowLeft } from 'lucide-react';
-import SmartWidget from './SmartWidget';
+import { Sparkles, ArrowLeft } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
-export default function GuestInvoiceGenerator({ onFinish, onLimitReached, deviceFingerprint, isAuthenticated }: { onFinish: () => void, onLimitReached: () => void, deviceFingerprint: string, isAuthenticated: boolean }) {
+export default function GuestInvoiceGenerator({ onFinish, onLimitReached, deviceFingerprint }: { onFinish: () => void, onLimitReached: () => void, deviceFingerprint: string }) {
+  const [prompt, setPrompt] = useState('');
+  const [customer, setCustomer] = useState('');
+  const [product, setProduct] = useState('');
+  const [qty, setQty] = useState(1);
+  const [price, setPrice] = useState(0);
+
   const [trialBusinessName, setTrialBusinessName] = useState('');
   const [trialPhone, setTrialPhone] = useState('');
   const [trialAddress, setTrialAddress] = useState('');
 
-  const handleSaveTrialInvoice = (parsedInvoice: any) => {
-    if (!isAuthenticated) {
-      alert("Please log in to generate and download invoices.");
-      // Explicitly clear guest state before redirecting
-      setTrialBusinessName('');
-      setTrialPhone('');
-      setTrialAddress('');
-      onLimitReached(); // Or redirect to login
-      return;
+  const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
+
+  const generate = async (isMagic: boolean) => {
+    try {
+      const res = await apiFetch('/api/guest/invoice-generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-device-fingerprint': deviceFingerprint
+        },
+        body: JSON.stringify({ device_fingerprint_hash: deviceFingerprint })
+      });
+
+      if (res.status === 403) {
+        setIsLimitModalOpen(true);
+        return;
+      }
+    } catch (err) {
+      console.error("Trial tracker failed:", err);
     }
+
     const business: BusinessProfile = {
       businessName: trialBusinessName.trim() || 'YOUR BUSINESS NAME (TRIAL)',
       phone: trialPhone.trim() || '080-XXXXXXXX',
       address: trialAddress.trim() || 'Your Shop Address',
-      invoiceTemplatePreference: 'modern_blue',
-      businessLogo: '',
-      customAccentColor: '#00A6FF',
-      customFontSize: 'md',
-      customFontFamily: 'sans',
-      customShowLogo: false,
-      customHeaderTitle: 'DEMO TRIAL INVOICE',
-      customFooterNotes: 'This document acts as an immediate trial compiling copy.',
-      customShadowStyle: 'sm'
-    };
+      invoiceTemplatePreference: 'classic',
+    } as any;
 
+    // Minimal mock invoice
     const invoice = {
-      id: 'TRIAL-' + Date.now().toString().slice(-4),
-      customerName: parsedInvoice.customerName || 'Walk-in Customer',
-      productName: parsedInvoice.productName || 'General Commodity',
-      items: parsedInvoice.items || [],
-      totalAmount: parsedInvoice.totalAmount,
-      amountPaid: parsedInvoice.amountPaid,
-      debtBalance: parsedInvoice.debtBalance,
-      transactionType: parsedInvoice.transactionType || 'sale',
-      createdAt: new Date().toISOString()
-    };
-
-    // Fallback item if empty
-    if (invoice.items.length === 0) {
-      invoice.items = [{
-        name: parsedInvoice.productName || 'General Commodity',
-        quantity: 1,
-        price: parsedInvoice.totalAmount,
-        total: parsedInvoice.totalAmount
-      }];
-    }
+        id: 'TRIAL-' + Date.now().toString().slice(-4),
+        customerName: isMagic ? 'Guest Magic' : customer,
+        productName: isMagic ? prompt : product,
+        items: [{
+            name: isMagic ? prompt : product,
+            quantity: isMagic ? 1 : qty,
+            price: isMagic ? 0 : price,
+            total: isMagic ? 0 : (qty * price)
+        }],
+        totalAmount: isMagic ? 0 : (qty * price),
+        amountPaid: 0,
+        debtBalance: isMagic ? 0 : (qty * price),
+        transactionType: 'sale',
+        createdAt: new Date().toISOString()
+    } as any;
 
     generateInvoicePDF(invoice, business, [], true);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      <header className="flex justify-between items-center p-6 lg:px-12 border-b border-slate-900">
+        <button onClick={onFinish} className="flex items-center gap-2 text-slate-400 hover:text-white">
+          <ArrowLeft className="w-4 h-4" /> Back
+        </button>
+        <h1 className="text-2xl font-black tracking-tighter">Yeedem Books</h1>
+        <div className="w-16"></div> {/* Spacer */}
+      </header>
 
-      <main className="flex-grow p-2 flex flex-col items-center">
-        <div className="max-w-3xl w-full">
-            
-            {/* Unified Smart Invoice Arena Container (Card-based layout) */}
-            <div className="bg-white rounded-[32px] p-4 md:p-6 shadow-sm border border-gray-150 space-y-4">
-              
-              <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-2">
-                <div>
-                  <span className="px-2.5 py-0.5 bg-indigo-50 text-[#00A6FF] rounded-full text-[9px] font-extrabold uppercase tracking-wide border border-blue-100">
-                    ⚡ LIVE INTERACTIVE SANDBOX
-                  </span>
-                  <h2 className="text-md sm:text-lg font-bold text-[#0E1338] mt-1">Smart Invoice Engine (Fuse Mode)</h2>
-                </div>
-                <span className="text-[10px] text-gray-400 italic">2 Free Trials Remaining</span>
-              </div>
-              
-              <div className="text-gray-600 text-xs py-1 leading-relaxed">
-                Test the live compiler below! Type an order query (e.g., <span className="font-mono text-blue-600 font-bold bg-blue-50 px-1 py-0.5 rounded">6 sacks of flour to Alao for 32k each, paid 120k</span>) or click the <span className="font-bold text-[#0E1338]">Manual</span> tab to input details manually. Click "Commit Ledger" to instantly download your trial receipt.
-              </div>
+      <main className="flex-grow p-6 lg:px-12 flex flex-col items-center">
+        <div className="max-w-2xl w-full space-y-8">
+            <h2 className="text-3xl font-bold text-center">Trial Invoice Generator</h2>
 
-              {/* Dynamic Context Form for Business Profile Customization */}
-              <div className="bg-[#F8FAFC] p-5 rounded-2xl border border-gray-150 space-y-3 mt-2 text-left">
-                <h3 className="text-[11px] font-bold text-[#0E1338] uppercase tracking-wider flex items-center gap-1.5 justify-start">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                  Enter Your Company Details (Trial Invoice Headers)
+            <div className="bg-slate-900 p-6 rounded-3xl space-y-4">
+                <h3 className="font-bold text-[#00A6FF] flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#00A6FF] animate-pulse"></span>
+                  Custom Store Headers
                 </h3>
+                <p className="text-xs text-slate-400">Complete these optional fields to replace default template headers with your own custom business context.</p>
                 <div className="space-y-3">
-                  <div>
-                    <label className="block text-[9px] uppercase font-black text-gray-400 mb-1 tracking-wider">Business Name</label>
+                  <input
+                    value={trialBusinessName}
+                    onChange={e => setTrialBusinessName(e.target.value)}
+                    placeholder="Business / Store Name"
+                    className="w-full p-4 rounded-xl bg-slate-800 text-slate-100 placeholder-slate-500 border border-slate-700"
+                  />
+                  <div className="flex gap-4">
                     <input 
-                      type="text" 
-                      value={trialBusinessName} 
-                      onChange={e => setTrialBusinessName(e.target.value)} 
-                      placeholder="e.g. ALABA FLOUR DEPOT" 
-                      className="w-full text-xs p-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 placeholder-gray-400 focus:outline-none focus:border-[#00a6ff]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[9px] uppercase font-black text-gray-400 mb-1 tracking-wider">Phone Number</label>
-                    <input 
-                      type="text" 
                       value={trialPhone} 
                       onChange={e => setTrialPhone(e.target.value)} 
-                      placeholder="e.g. +234 812-345-6789" 
-                      className="w-full text-xs p-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 placeholder-gray-400 focus:outline-none focus:border-[#00a6ff]"
+                      placeholder="Store Phone Contact"
+                      className="flex-1 p-4 rounded-xl bg-slate-800 text-slate-100 placeholder-slate-500 border border-slate-700"
                     />
-                  </div>
-                  <div>
-                    <label className="block text-[9px] uppercase font-black text-gray-400 mb-1 tracking-wider">Location Address</label>
                     <input 
-                      type="text" 
                       value={trialAddress} 
                       onChange={e => setTrialAddress(e.target.value)} 
-                      placeholder="e.g. Shop 4, SME Complex, Lagos" 
-                      className="w-full text-xs p-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 placeholder-gray-400 focus:outline-none focus:border-[#00a6ff]"
+                      placeholder="Store Location Address"
+                      className="flex-1 p-4 rounded-xl bg-slate-800 text-slate-100 placeholder-slate-500 border border-slate-700"
                     />
                   </div>
                 </div>
-                <p className="text-[10px] text-gray-400 leading-snug">
-                  * The dynamic details typed above will instantly overwrite the default layout template headers on your compiled PDF.
-                </p>
-              </div>
+            </div>
 
-              <div id="smart-widget" className="pt-2">
-                <SmartWidget onSaveParsedInvoice={handleSaveTrialInvoice} />
-              </div>
+            <div className="bg-slate-900 p-6 rounded-3xl space-y-4">
+                <h3 className="font-bold flex items-center gap-2"><Sparkles className="w-4 h-4 color-[#00A6FF]" /> Magic Mode</h3>
+                <input value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="e.g. 5 bags of sugar to Musa" className="w-full p-4 rounded-xl bg-slate-800 text-slate-100 border border-slate-700" />
+                <button onClick={() => generate(true)} className="w-full bg-[#00A6FF] py-3 rounded-xl font-bold hover:bg-blue-600">Generate Magic</button>
+            </div>
+
+            <div className="bg-slate-900 p-6 rounded-3xl space-y-4">
+                <h3 className="font-bold">Manual Mode</h3>
+                <input value={customer} onChange={e => setCustomer(e.target.value)} placeholder="Customer Name" className="w-full p-4 rounded-xl bg-slate-800 text-slate-100 border border-slate-700" />
+                <input value={product} onChange={e => setProduct(e.target.value)} placeholder="Product Name" className="w-full p-4 rounded-xl bg-slate-800 text-slate-100 border border-slate-700" />
+                <div className="flex gap-4">
+                    <input type="number" value={qty} onChange={e => setQty(parseInt(e.target.value))} placeholder="Qty" className="flex-1 p-4 rounded-xl bg-slate-800 text-slate-100 border border-slate-700" />
+                    <input type="number" value={price} onChange={e => setPrice(parseInt(e.target.value))} placeholder="Price" className="flex-1 p-4 rounded-xl bg-slate-800 text-slate-100 border border-slate-700" />
+                </div>
+                <button onClick={() => generate(false)} className="w-full bg-slate-700 py-3 rounded-xl font-bold hover:bg-slate-600">Generate Manual Invoice</button>
             </div>
         </div>
       </main>
       
+      <footer className="p-8 text-center text-slate-600 text-xs border-t border-slate-900 mx-auto w-full max-w-4xl">
+        <p>© 2026 Yeedem Tech. Optimized for Nigerian SMEs. Business Identity: Yeedem Tech | Team: Suleman & Sesan</p>
+      </footer>
+
+      {isLimitModalOpen && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-6 z-50">
+          <div className="bg-slate-900 rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-700 text-center space-y-6">
+            <h2 className="text-2xl font-bold text-white">Trial Limit Reached</h2>
+            <p className="text-slate-400">You have generated 2 free trial invoices. To continue generating unlimited professional invoices and managing your ledger securely, please sign up for an account.</p>
+            <button onClick={onLimitReached} className="w-full bg-[#00A6FF] text-white py-4 rounded-xl font-bold hover:bg-blue-600 shadow-lg shadow-blue-500/20">Sign Up Now</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
