@@ -17,7 +17,6 @@ export interface Invoice {
   transactionType: 'sale' | 'expense' | 'payment_on_account';
   createdAt: string;
   status?: 'DRAFT' | 'PAID' | 'OVERDUE';
-  staffName?: string;
 }
 
 export interface Customer {
@@ -65,14 +64,6 @@ export interface BusinessProfile {
   footerStyles?: TextSectionStyles;
 }
 
-export interface BillingInvoice {
-  id: string;
-  plan: string;
-  date: string;
-  amount: number;
-  status: 'paid' | 'pending' | 'failed';
-}
-
 export interface UserState {
   authenticated: boolean;
   onboarded: boolean;
@@ -81,9 +72,6 @@ export interface UserState {
   business?: BusinessProfile;
   trialCount: number;
   ownerPin?: string;
-  subscriptionPlan?: string;
-  subscriptionStatus?: string;
-  billingHistory?: BillingInvoice[];
 }
 
 export interface RestockEvent {

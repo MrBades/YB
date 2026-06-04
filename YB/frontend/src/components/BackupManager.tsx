@@ -31,7 +31,6 @@ interface BackupManagerProps {
   products: any[];
   restockLogs: any[];
   userBusiness: any;
-  subscriptionPlan?: string;
   onRestoreBackup: (restoredData: { customers: any[], products: any[], restockLogs?: any[] }) => void;
   triggerBackupNow: () => Promise<any>;
 }
@@ -43,7 +42,6 @@ export default function BackupManager({
   products,
   restockLogs,
   userBusiness,
-  subscriptionPlan,
   onRestoreBackup,
   triggerBackupNow
 }: BackupManagerProps) {
@@ -53,23 +51,7 @@ export default function BackupManager({
   const [actionStatus, setActionStatus] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
-  const [syncTime, setSyncTime] = useState('18:00');
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Load user settings
-  useEffect(() => {
-    const savedAutoSync = localStorage.getItem(`auto_sync_enabled_${userEmail}`);
-    const savedSyncTime = localStorage.getItem(`sync_time_${userEmail}`);
-    if (savedAutoSync !== null) setAutoSyncEnabled(JSON.parse(savedAutoSync));
-    if (savedSyncTime !== null) setSyncTime(savedSyncTime);
-  }, [userEmail]);
-
-  // Save user settings
-  useEffect(() => {
-    localStorage.setItem(`auto_sync_enabled_${userEmail}`, JSON.stringify(autoSyncEnabled));
-    localStorage.setItem(`sync_time_${userEmail}`, syncTime);
-  }, [autoSyncEnabled, syncTime, userEmail]);
 
   // Load backups timeline
   const fetchServerBackups = async () => {
@@ -380,7 +362,6 @@ export default function BackupManager({
             <Database className="w-5.2 h-5.2 text-[#00A6FF]" />
             Ledger Daily Backups & Disaster Recovery
           </h2>
-          {subscriptionPlan && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase">Plan: {subscriptionPlan}</span>}
           <p className="text-xs text-gray-400">
             Automated daily snapshots safeguard your microlending records and catalogs on local storage arrays and client cookies.
           </p>
@@ -410,39 +391,11 @@ export default function BackupManager({
           </p>
         </div>
         <div className="hidden sm:block">
-          <span className={`px-2.5 py-1 ${autoSyncEnabled ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-50 text-gray-500'} border ${autoSyncEnabled ? 'border-emerald-100' : 'border-gray-200'} rounded-full font-bold text-[10px] uppercase tracking-wider flex items-center gap-1`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${autoSyncEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`}></span>
-            {autoSyncEnabled ? 'Active' : 'Disabled'}
+          <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-full font-bold text-[10px] uppercase tracking-wider flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            Active
           </span>
         </div>
-      </div>
-
-      {/* Sync Settings */}
-      <div className="bg-white p-4 rounded-2xl border border-gray-100 flex flex-wrap items-center justify-between gap-4">
-        <label className="flex items-center gap-3 cursor-pointer">
-          <div className={`w-10 h-5 rounded-full p-0.5 transition ${autoSyncEnabled ? 'bg-[#00A6FF]' : 'bg-gray-200'}`}>
-            <div className={`w-4 h-4 rounded-full bg-white transition ${autoSyncEnabled ? 'translate-x-5' : 'translate-x-0'}`}></div>
-          </div>
-          <input 
-            type="checkbox" 
-            className="hidden" 
-            checked={autoSyncEnabled} 
-            onChange={(e) => setAutoSyncEnabled(e.target.checked)} 
-          />
-          <span className="text-xs font-bold text-gray-700">Automated Daily Sync</span>
-        </label>
-        
-        {autoSyncEnabled && (
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-gray-500">Sync Time:</span>
-            <input 
-              type="time" 
-              value={syncTime}
-              onChange={(e) => setSyncTime(e.target.value)}
-              className="text-xs font-bold text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 focus:border-[#00A6FF] outline-none"
-            />
-          </div>
-        )}
       </div>
 
       {actionStatus && (

@@ -1,5 +1,4 @@
 import { useState, FormEvent } from 'react';
-import DebtorAgingPieChart from './DebtorAgingPieChart';
 import { Customer, Invoice } from '../types';
 import { 
   Search, 
@@ -349,65 +348,57 @@ export default function DebtorsList({
         </div>
 
         {/* Repayment Settlement Console */}
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
-            <h2 className="font-display font-semibold text-lg text-gray-900 border-b pb-2">Aging Visualization</h2>
-            <DebtorAgingPieChart data0to15={aged0to15} data16to30={aged16to30} dataOver30={agedOver30} />
-          </div>
+        <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+          <h2 className="font-display font-semibold text-lg text-gray-900 border-b pb-2">Repayment Desk</h2>
 
-          <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
-            <h2 className="font-display font-semibold text-lg text-gray-900 border-b pb-2">Repayment Desk</h2>
+          {selectedCustomer ? (
+            <form onSubmit={handlePaymentSubmit} className="space-y-4">
+              <div className="bg-amber-50/50 rounded-xl p-4 border border-amber-100 text-xs">
+                <span className="text-gray-400 text-[10px] uppercase font-semibold">Active Ledger Customer</span>
+                <p className="text-sm font-bold text-gray-800 mt-0.5">{selectedCustomer.name}</p>
 
-            {selectedCustomer ? (
-              <form onSubmit={handlePaymentSubmit} className="space-y-4">
-                <div className="bg-amber-50/50 rounded-xl p-4 border border-amber-100 text-xs">
-                  <span className="text-gray-400 text-[10px] uppercase font-semibold">Active Ledger Customer</span>
-                  <p className="text-sm font-bold text-gray-800 mt-0.5">{selectedCustomer.name}</p>
-                  
-                  <div className="mt-2 text-red-600 flex justify-between">
-                    <span>Pending Outstanding:</span>
-                    <span className="font-bold">₦{selectedCustomer.activeDebtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                  </div>
+                <div className="mt-2 text-red-600 flex justify-between">
+                  <span>Pending Outstanding:</span>
+                  <span className="font-bold">₦{selectedCustomer.activeDebtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase">Payment Amount (₦)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(e.target.value)}
-                    placeholder="e.g. 5000"
-                    className="w-full text-sm rounded-xl border-gray-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 p-3"
-                    required
-                  />
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCustomer(null)}
-                    className="flex-1 py-1 px-3 bg-gray-50 hover:bg-gray-150 rounded-xl text-xs font-semibold text-gray-700 border"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-1 px-3 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-xs font-semibold text-white transition shadow"
-                  >
-                    Record Payment
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <div className="py-12 text-center text-gray-400 italic text-xs space-y-2">
-                <UserMinus className="w-8 h-8 mx-auto text-gray-300" />
-                <p>Select "Add Repayment" on any client left to settle outstanding accounts.</p>
               </div>
-            )}
-          </div>
-        </div>
 
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase">Payment Amount (₦)</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  placeholder="e.g. 5000"
+                  className="w-full text-sm rounded-xl border-gray-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 p-3"
+                  required
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedCustomer(null)}
+                  className="flex-1 py-1 px-3 bg-gray-50 hover:bg-gray-150 rounded-xl text-xs font-semibold text-gray-700 border"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-1 px-3 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-xs font-semibold text-white transition shadow"
+                >
+                  Record Payment
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="py-12 text-center text-gray-400 italic text-xs space-y-2">
+              <UserMinus className="w-8 h-8 mx-auto text-gray-300" />
+              <p>Select "Add Repayment" on any client left to settle outstanding accounts.</p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* SMS Simulation Modal overlay */}
@@ -719,30 +710,19 @@ export default function DebtorsList({
                   Delivered on WhatsApp
                 </div>
               ) : (
-                <div className="flex-1 flex flex-col sm:flex-row gap-2">
-                  <button
-                    type="button"
-                    onClick={handleSendWhatsapp}
-                    disabled={waStatus === 'sending'}
-                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold text-white transition shadow flex items-center justify-center gap-1.5 ${
-                      waStatus === 'sending'
-                        ? 'bg-amber-500 hover:bg-amber-600'
-                        : 'bg-indigo-600 hover:bg-indigo-700'
-                    }`}
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    {waStatus === 'sending' ? 'Sending API request...' : 'Send Simulated WhatsApp'}
-                  </button>
-                  <a
-                    href={`https://wa.me/${waPhone.replace(/[\s\+\-\(\)]/g, '')}?text=${encodeURIComponent(waMessage)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-750 text-white rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1.5 shadow"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    Open Real WhatsApp App ↗
-                  </a>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleSendWhatsapp}
+                  disabled={waStatus === 'sending'}
+                  className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold text-white transition shadow flex items-center justify-center gap-1.5 ${
+                    waStatus === 'sending'
+                      ? 'bg-amber-500 hover:bg-amber-600'
+                      : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {waStatus === 'sending' ? 'Sending API request...' : 'Send Simulated WhatsApp'}
+                </button>
               )}
             </div>
           </div>

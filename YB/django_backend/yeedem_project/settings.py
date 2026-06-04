@@ -147,6 +147,12 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
     'x-session-id',
 ]
 
+CSRF_TRUSTED_ORIGINS = [
+    'https://*.vercel.app',
+    'http://localhost:3000',
+    'http://127.0.0.1:8000',
+]
+
 # Django REST Framework Settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (

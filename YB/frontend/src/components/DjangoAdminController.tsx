@@ -50,9 +50,9 @@ export default function DjangoAdminController({
   userEmail
 }: DjangoAdminControllerProps) {
   // Telemetry Metrics
-  const totalOutstandingDebt = customers.reduce((sum, c) => sum + (Number(c.activeDebtBalance) || 0), 0);
+  const totalOutstandingDebt = customers.reduce((sum, c) => sum + (Number(c.active_debt_balance) || 0), 0);
   const totalProductsCount = products.length;
-  const lowStockCount = products.filter(p => p.stock <= (p.minQuantityCount ?? 5)).length;
+  const lowStockCount = products.filter(p => p.stock <= 5).length;
   
   // Custom Controls Input States
   const [priceAdjustmentPercent, setPriceAdjustmentPercent] = useState<number>(10);
@@ -123,12 +123,12 @@ export default function DjangoAdminController({
     }
     const updated = customers.map(cust => ({
       ...cust,
-      activeDebtBalance: 0,
+      active_debt_balance: 0,
       invoices: (cust.invoices || []).map((inv: any) => ({
         ...inv,
-        amountPaid: inv.totalAmount,
+        amount_paid: inv.total_amount,
         status: 'PAID',
-        debtBalance: 0
+        debt_balance: 0
       }))
     }));
     
@@ -139,8 +139,7 @@ export default function DjangoAdminController({
   // Control action 3: Restock all low-stock warning items
   const handleRestockWarnings = () => {
     const updated = products.map(prod => {
-      const isLowStock = prod.stock <= (prod.minQuantityCount ?? 5);
-      if (isLowStock) {
+      if (prod.stock <= 5) {
         return {
           ...prod,
           stock: targetMinStock
@@ -150,7 +149,7 @@ export default function DjangoAdminController({
     });
 
     onUpdateProducts(updated);
-    addAuditLog('SUCCESS', 'RESTOCK_LOW_UNITS', `Auto-stocked all low items up to safe reserves of ${targetMinStock} units.`);
+    addAuditLog('SUCCESS', 'RESTOCK_LOW_UNITS', `Auto-stocked all items with levels <= 5 up to safe reserves of ${targetMinStock} units.`);
   };
 
   // Emergency Server Session Unlock API
