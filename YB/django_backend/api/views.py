@@ -1,3 +1,5 @@
+import os
+from django.core.management import call_command
 from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -7,8 +9,6 @@ from django.db.models import Sum, F, Q, ExpressionWrapper, DecimalField
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
-from django.core.management import call_command
-import io
 
 from .models import (
     BusinessProfile, Customer, Product, LowStockNotification,
@@ -20,7 +20,7 @@ from .serializers import (
     ProductSerializer, InvoiceSerializer, SupplierRecordSerializer, 
     InventoryIntakeLogSerializer, LowStockNotificationSerializer
 )
-from .utils import parse_multimodal_smart_input, parse_multimodal_smart_product
+from .utils import parse_multimodal_smart_input
 
 
 class BusinessProfileViewSet(viewsets.ModelViewSet):
@@ -133,16 +133,9 @@ class SmartInputProcessorAPIView(APIView):
     runs the AI (or Regex fallback), creates the customer and invoice records implicitly,
     and returns parsed, structured data.
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        session_id = request.headers.get('x-session-id')
-        user = None
-        if session_id and session_id not in ["null", "undefined", ""]:
-            user, err = get_session_user(request)
-            if err:
-                return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
-
         text_prompt = request.data.get("text", "").strip()
         image_file = request.FILES.get("image")
         audio_file = request.FILES.get("audio")
@@ -154,34 +147,31 @@ class SmartInputProcessorAPIView(APIView):
             )
 
         try:
-            parsed_data, extraction_status = parse_multimodal_smart_input(
+            parsed_data = parse_multimodal_smart_input(
                 text=text_prompt,
                 image_file=image_file,
                 audio_file=audio_file
             )
 
-            response_payload = {
-                "status": extraction_status,
-                "parsed_data": parsed_data
-            }
+            # Retrieve business model
+            profile = get_object_or_404(BusinessProfile, user=request.user)
 
-            if user:
-                # Retrieve business model
-                profile = get_object_or_404(BusinessProfile, user=user)
+            # Auto create/match the customer
+            customer_name = parsed_data.get("customer_name") or "Walk-in Customer"
+            customer, created = Customer.objects.get_or_create(
+                business=profile,
+                name=customer_name
+            )
 
-                # Auto create/match the customer
-                customer_name = parsed_data.get("customer_name") or "Walk-in Customer"
-                customer, created = Customer.objects.get_or_create(
-                    business=profile,
-                    name=customer_name
-                )
-                response_payload["matched_customer"] = {
+            return Response({
+                "status": "success",
+                "parsed_data": parsed_data,
+                "matched_customer": {
                     "id": customer.id,
                     "name": customer.name,
                     "active_debt": float(customer.active_debt_balance)
                 }
-
-            return Response(response_payload)
+            })
         except Exception as e:
             return Response({
                 "status": "fallback_error",
@@ -198,76 +188,14 @@ class SmartInputProcessorAPIView(APIView):
             }, status=status.HTTP_200_OK)
 
 
-class SmartProductProcessorAPIView(APIView):
-    """
-    Smart Product Extraction Endpoint.
-    """
-    permission_classes = [AllowAny]
-
-    def post(self, request, *args, **kwargs):
-        session_id = request.headers.get('x-session-id')
-        user = None
-        if session_id and session_id not in ["null", "undefined", ""]:
-            user, err = get_session_user(request)
-            if err:
-                return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
-
-        text_prompt = request.data.get("text", "").strip()
-
-        if not text_prompt:
-            return Response(
-                {"error": "Please provide a product description text."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            parsed_data, extraction_status = parse_multimodal_smart_product(text=text_prompt)
-            return Response({
-                "status": extraction_status,
-                "parsed_data": parsed_data
-            })
-        except Exception as e:
-            return Response({
-                "status": "fallback_error",
-                "error": str(e),
-                "parsed_data": {
-                    "name": "General Commodity",
-                    "sku": "SKU-PROD",
-                    "stock": 10,
-                    "price": 0.0
-                }
-            }, status=status.HTTP_200_OK)
-
-
 class DashboardMetricsAPIView(APIView):
     """
     Provides real-time aggregated metrics for the SME Ledger dashboard view.
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
-        session_id = request.headers.get('x-session-id')
-        user = None
-        if session_id and session_id not in ["null", "undefined", ""]:
-            user, err = get_session_user(request)
-            if err:
-                return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
-
-        if not user:
-             # Return empty/zero metrics for guest mode
-             return Response({
-                "metrics": {
-                    "total_outstanding_debt": 0.0,
-                    "total_sales": 0.0,
-                    "total_paid": 0.0,
-                    "total_products": 0,
-                    "low_stock_count": 0,
-                    "recent_debt": 0.0,
-                    "aged_over_30_debt": 0.0
-                }
-            })
-
-        profile = get_object_or_404(BusinessProfile, user=user)
+        profile = get_object_or_404(BusinessProfile, user=request.user)
 
         # 1. Total outstanding loans
         outstanding_loan_aggregate = Customer.objects.filter(
@@ -767,6 +695,23 @@ class UnlockAllView(APIView):
         return Response({"status": "success", "message": "All sessions unlocked."})
 
 
+class AdminMigrateView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        # A simple check: require a header to prevent abuse without SSH
+        secret = request.headers.get('x-admin-secret')
+        if secret != os.environ.get('ADMIN_SECRET', 'temp-dev-secret'):
+             return Response({"error": "Unauthorized"}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        try:
+            call_command('migrate')
+            return Response({"status": "success", "message": "Migrations applied successfully."})
+        except Exception as e:
+            
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class BusinessSettingsView(APIView):
     permission_classes = [AllowAny]
 
@@ -1002,18 +947,3 @@ class StaffLogView(APIView):
         )
         return Response({"status": "success"})
 
-
-class SystemMigrateView(APIView):
-    """
-    Emergency endpoint to trigger database migrations.
-    """
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        output = io.StringIO()
-        try:
-            call_command('migrate', no_input=True, stdout=output)
-            result = output.getvalue()
-            return Response({"status": "success", "output": result})
-        except Exception as e:
-            return Response({"status": "error", "message": str(e)}, status=500)

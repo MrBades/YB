@@ -1,9 +1,7 @@
 import os
-import sys
 import dj_database_url
 import environ
 from pathlib import Path
-from corsheaders.defaults import default_headers
 from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -78,35 +76,23 @@ WSGI_APPLICATION = 'yeedem_project.wsgi.application'
 # Falls back to local sqlite3 for easier local development
 DATABASE_URL = os.environ.get('DATABASE_URL') or os.environ.get('POSTGRES_URL')
 
-if os.environ.get('POSTGRES_URL'):
+if DATABASE_URL:
     DATABASES = {
         'default': dj_database_url.config(
-            default=os.environ.get('POSTGRES_URL'),
+            default=DATABASE_URL,
             conn_max_age=600,
+            conn_health_checks=True,
             ssl_require=True
         )
-    }
-elif os.environ.get('DATABASE_URL'):
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=os.environ.get('DATABASE_URL'),
-            conn_max_age=600,
-            ssl_require=True
-        )
-    }
-elif 'collectstatic' in sys.argv:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.dummy',
-        }
     }
 else:
     DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
         }
     }
+
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -141,11 +127,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS configuration for simple integration
 CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_HEADERS = list(default_headers) + [
-    'x-device-fingerprint',
-    'x-approx-region',
-    'x-session-id',
-]
 
 # Django REST Framework Settings
 REST_FRAMEWORK = {

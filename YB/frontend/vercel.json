@@ -13,26 +13,26 @@
       "use": "@vercel/python",
       "config": {
         "maxLambdaSize": "15mb",
-        "runtime": "python3.12"
+        "runtime": "python3.9"
       }
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/django_backend/yeedem_project/wsgi.py"
+      "dest": "django_backend/yeedem_project/wsgi.py"
     },
     {
       "src": "/admin/(.*)",
-      "dest": "/django_backend/yeedem_project/wsgi.py"
+      "dest": "django_backend/yeedem_project/wsgi.py"
     },
     {
       "src": "/static/admin/(.*)",
-      "dest": "/django_backend/yeedem_project/wsgi.py"
+      "dest": "django_backend/yeedem_project/wsgi.py"
     },
     {
       "src": "/static/rest_framework/(.*)",
-      "dest": "/django_backend/yeedem_project/wsgi.py"
+      "dest": "django_backend/yeedem_project/wsgi.py"
     },
     {
       "src": "/assets/(.*)",

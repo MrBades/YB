@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yeedem-books-v1';
+const CACHE_NAME = 'yeedem-books-v2';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',

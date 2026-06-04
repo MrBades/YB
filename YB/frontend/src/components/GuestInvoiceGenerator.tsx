@@ -1,145 +1,205 @@
 import React, { useState } from 'react';
 import { generateInvoicePDF } from '../lib/pdfGenerator';
 import { BusinessProfile } from '../types';
-import { Sparkles, ArrowLeft } from 'lucide-react';
-import { apiFetch } from '../lib/api';
+import { ArrowLeft, Sparkles, HelpCircle, FileText } from 'lucide-react';
+import SmartWidget from './SmartWidget';
 
-export default function GuestInvoiceGenerator({ onFinish, onLimitReached, deviceFingerprint }: { onFinish: () => void, onLimitReached: () => void, deviceFingerprint: string }) {
-  const [prompt, setPrompt] = useState('');
-  const [customer, setCustomer] = useState('');
-  const [product, setProduct] = useState('');
-  const [qty, setQty] = useState(1);
-  const [price, setPrice] = useState(0);
-
+export default function GuestInvoiceGenerator({ onFinish, onLimitReached, deviceFingerprint, isAuthenticated }: { onFinish: () => void, onLimitReached: () => void, deviceFingerprint: string, isAuthenticated: boolean }) {
   const [trialBusinessName, setTrialBusinessName] = useState('');
   const [trialPhone, setTrialPhone] = useState('');
   const [trialAddress, setTrialAddress] = useState('');
 
-  const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
-
-  const generate = async (isMagic: boolean) => {
-    try {
-      const res = await apiFetch('/api/guest/invoice-generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-device-fingerprint': deviceFingerprint
-        },
-        body: JSON.stringify({ device_fingerprint_hash: deviceFingerprint })
-      });
-
-      if (res.status === 403) {
-        setIsLimitModalOpen(true);
-        return;
-      }
-    } catch (err) {
-      console.error("Trial tracker failed:", err);
+  const handleSaveTrialInvoice = (parsedInvoice: any) => {
+    if (!isAuthenticated) {
+      alert("Please log in to generate and download invoices.");
+      // Explicitly clear guest state before redirecting
+      setTrialBusinessName('');
+      setTrialPhone('');
+      setTrialAddress('');
+      onLimitReached(); // Or redirect to login
+      return;
     }
-
     const business: BusinessProfile = {
       businessName: trialBusinessName.trim() || 'YOUR BUSINESS NAME (TRIAL)',
       phone: trialPhone.trim() || '080-XXXXXXXX',
       address: trialAddress.trim() || 'Your Shop Address',
-      invoiceTemplatePreference: 'classic',
-    } as any;
+      invoiceTemplatePreference: 'modern_blue',
+      businessLogo: '',
+      customAccentColor: '#00A6FF',
+      customFontSize: 'md',
+      customFontFamily: 'sans',
+      customShowLogo: false,
+      customHeaderTitle: 'DEMO TRIAL INVOICE',
+      customFooterNotes: 'This document acts as an immediate trial compiling copy.',
+      customShadowStyle: 'sm'
+    };
 
-    // Minimal mock invoice
     const invoice = {
-        id: 'TRIAL-' + Date.now().toString().slice(-4),
-        customerName: isMagic ? 'Guest Magic' : customer,
-        productName: isMagic ? prompt : product,
-        items: [{
-            name: isMagic ? prompt : product,
-            quantity: isMagic ? 1 : qty,
-            price: isMagic ? 0 : price,
-            total: isMagic ? 0 : (qty * price)
-        }],
-        totalAmount: isMagic ? 0 : (qty * price),
-        amountPaid: 0,
-        debtBalance: isMagic ? 0 : (qty * price),
-        transactionType: 'sale',
-        createdAt: new Date().toISOString()
-    } as any;
+      id: 'TRIAL-' + Date.now().toString().slice(-4),
+      customerName: parsedInvoice.customerName || 'Walk-in Customer',
+      productName: parsedInvoice.productName || 'General Commodity',
+      items: parsedInvoice.items || [],
+      totalAmount: parsedInvoice.totalAmount,
+      amountPaid: parsedInvoice.amountPaid,
+      debtBalance: parsedInvoice.debtBalance,
+      transactionType: parsedInvoice.transactionType || 'sale',
+      createdAt: new Date().toISOString()
+    };
+
+    // Fallback item if empty
+    if (invoice.items.length === 0) {
+      invoice.items = [{
+        name: parsedInvoice.productName || 'General Commodity',
+        quantity: 1,
+        price: parsedInvoice.totalAmount,
+        total: parsedInvoice.totalAmount
+      }];
+    }
 
     generateInvoicePDF(invoice, business, [], true);
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      <header className="flex justify-between items-center p-6 lg:px-12 border-b border-slate-900">
-        <button onClick={onFinish} className="flex items-center gap-2 text-slate-400 hover:text-white">
-          <ArrowLeft className="w-4 h-4" /> Back
-        </button>
-        <h1 className="text-2xl font-black tracking-tighter">Yeedem Books</h1>
-        <div className="w-16"></div> {/* Spacer */}
-      </header>
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
 
-      <main className="flex-grow p-6 lg:px-12 flex flex-col items-center">
-        <div className="max-w-2xl w-full space-y-8">
-            <h2 className="text-3xl font-bold text-center">Trial Invoice Generator</h2>
+      <main className="flex-grow p-2 flex flex-col items-center">
+        <div className="max-w-3xl w-full">
+            
+            {/* Unified Smart Invoice Arena Container (Card-based layout) */}
+            <div className="bg-white rounded-[32px] p-4 md:p-6 shadow-sm border border-gray-150 space-y-4">
+              
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-2">
+                <div>
+                  <span className="px-2.5 py-0.5 bg-indigo-50 text-[#00A6FF] rounded-full text-[9px] font-extrabold uppercase tracking-wide border border-blue-100">
+                    ⚡ LIVE INTERACTIVE SANDBOX
+                  </span>
+                  <h2 className="text-md sm:text-lg font-bold text-[#0E1338] mt-1">Smart Invoice Engine (Fuse Mode)</h2>
+                </div>
+                <span className="text-[10px] text-gray-400 italic">2 Free Trials Remaining</span>
+              </div>
+              
+              <div className="text-gray-600 text-xs py-1 leading-relaxed">
+                Test the live compiler below! Type an order query (e.g., <span className="font-mono text-blue-600 font-bold bg-blue-50 px-1 py-0.5 rounded">6 sacks of flour to Alao for 32k each, paid 120k</span>) or click the <span className="font-bold text-[#0E1338]">Manual</span> tab to input details manually. Click "Commit Ledger" to instantly download your trial receipt.
+              </div>
 
-            <div className="bg-slate-900 p-6 rounded-3xl space-y-4">
-                <h3 className="font-bold text-[#00A6FF] flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#00A6FF] animate-pulse"></span>
-                  Custom Store Headers
+              {/* Premium Interactive Formats Guide Banner */}
+              <div className="bg-[#FAF9FF] rounded-[24px] p-4.5 border border-indigo-100 space-y-3 mt-1 text-left">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#00A6FF]" />
+                  <h3 className="text-xs font-bold text-[#0E1338] uppercase tracking-wider">
+                    Expected AI Input Format & Examples
+                  </h3>
+                </div>
+                <p className="text-gray-500 text-[11px] leading-relaxed">
+                  Our advanced natural language engine structures loose text data on the fly. Format your inputs using these standard billing patterns to ensure accurate automatic invoice parsing:
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  
+                  <div className="bg-white p-3.5 rounded-xl border border-gray-100 flex flex-col justify-between shadow-sm">
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#00A6FF]"></span>
+                        <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider">Single Item Invoice Structure</span>
+                      </div>
+                      <p className="text-[11px] text-gray-600 bg-gray-50/50 p-2.5 rounded-lg font-mono border border-gray-100 break-words leading-relaxed">
+                        "sold to Baba: 15 bags of cement at 8500 each, paid 100000"
+                      </p>
+                    </div>
+                    <div className="mt-2 text-[9.5px] text-gray-400">
+                      Perfect for immediate, high-speed wholesale transactions.
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-3.5 rounded-xl border border-gray-100 flex flex-col justify-between shadow-sm">
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                        <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider">Line-by-Line Multi-Item List</span>
+                      </div>
+                      <p className="text-[11px] text-gray-600 bg-gray-50/50 p-2.5 rounded-lg font-mono border border-gray-100 whitespace-pre-line leading-relaxed">
+                        {`customer: John Obi\n5 bags of corn at 25000\n2 packs of sugar at 15000\npaid 100000`}
+                      </p>
+                    </div>
+                    <div className="mt-2 text-[9.5px] text-gray-400">
+                      Allows recording complex multiple line-items in a single entry.
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-3.5 rounded-xl border border-gray-100 flex flex-col justify-between md:col-span-2 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <HelpCircle className="w-3.5 h-3.5 text-[#00A6FF]" />
+                      <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider">AI Expected Data Structure Indicators:</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-[10.5px] text-gray-600 leading-normal">
+                      <div className="bg-slate-50/70 p-2.5 rounded-xl border border-gray-100">
+                        <strong className="text-[#0E1338] block mb-0.5 font-bold">👤 1. Recipient Name</strong>
+                        Introduce customer entities using keyword flags: <code className="bg-white px-1 border rounded text-[#00A6FF] font-semibold text-[9.5px]">customer:</code>, <code className="bg-white px-1 border rounded text-[#00A6FF] font-semibold text-[9.5px]">sold to:</code>, or <code className="bg-white px-1 border rounded text-[#00A6FF] font-semibold text-[9.5px]">to [Name]:</code>.
+                      </div>
+                      <div className="bg-slate-50/70 p-2.5 rounded-xl border border-gray-100">
+                        <strong className="text-[#0E1338] block mb-0.5 font-bold">📦 2. Items & Quantity</strong>
+                        Mention quantities, item names and unit price details clearly with: <code className="bg-white px-1 border rounded text-indigo-600 font-semibold text-[9.5px]">at [price] each</code> or <code className="bg-white px-1 border rounded text-indigo-600 font-semibold text-[9.5px]">for [price] each</code>.
+                      </div>
+                      <div className="bg-slate-50/70 p-2.5 rounded-xl border border-gray-100">
+                        <strong className="text-[#0E1338] block mb-0.5 font-bold">💳 3. Payment Status</strong>
+                        Track amounts settled by specifying paying actions: <code className="bg-white px-1 border rounded text-emerald-600 font-semibold text-[9.5px]">paid [amount]</code>, <code className="bg-white px-1 border rounded text-emerald-600 font-semibold text-[9.5px]">deposited [amount]</code>, or <code className="bg-white px-1 border rounded text-emerald-600 font-semibold text-[9.5px]">balance</code>.
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Dynamic Context Form for Business Profile Customization */}
+              <div className="bg-[#F8FAFC] p-5 rounded-2xl border border-gray-150 space-y-3 mt-2 text-left">
+                <h3 className="text-[11px] font-bold text-[#0E1338] uppercase tracking-wider flex items-center gap-1.5 justify-start">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                  Enter Your Company Details (Trial Invoice Headers)
                 </h3>
-                <p className="text-xs text-slate-400">Complete these optional fields to replace default template headers with your own custom business context.</p>
                 <div className="space-y-3">
-                  <input
-                    value={trialBusinessName}
-                    onChange={e => setTrialBusinessName(e.target.value)}
-                    placeholder="Business / Store Name"
-                    className="w-full p-4 rounded-xl bg-slate-800 text-slate-100 placeholder-slate-500 border border-slate-700"
-                  />
-                  <div className="flex gap-4">
+                  <div>
+                    <label className="block text-[9px] uppercase font-black text-gray-400 mb-1 tracking-wider">Business Name</label>
                     <input 
+                      type="text" 
+                      value={trialBusinessName} 
+                      onChange={e => setTrialBusinessName(e.target.value)} 
+                      placeholder="e.g. ALABA FLOUR DEPOT" 
+                      className="w-full text-xs p-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 placeholder-gray-400 focus:outline-none focus:border-[#00a6ff]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] uppercase font-black text-gray-400 mb-1 tracking-wider">Phone Number</label>
+                    <input 
+                      type="text" 
                       value={trialPhone} 
                       onChange={e => setTrialPhone(e.target.value)} 
-                      placeholder="Store Phone Contact"
-                      className="flex-1 p-4 rounded-xl bg-slate-800 text-slate-100 placeholder-slate-500 border border-slate-700"
+                      placeholder="e.g. +234 812-345-6789" 
+                      className="w-full text-xs p-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 placeholder-gray-400 focus:outline-none focus:border-[#00a6ff]"
                     />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] uppercase font-black text-gray-400 mb-1 tracking-wider">Location Address</label>
                     <input 
+                      type="text" 
                       value={trialAddress} 
                       onChange={e => setTrialAddress(e.target.value)} 
-                      placeholder="Store Location Address"
-                      className="flex-1 p-4 rounded-xl bg-slate-800 text-slate-100 placeholder-slate-500 border border-slate-700"
+                      placeholder="e.g. Shop 4, SME Complex, Lagos" 
+                      className="w-full text-xs p-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 placeholder-gray-400 focus:outline-none focus:border-[#00a6ff]"
                     />
                   </div>
                 </div>
-            </div>
+                <p className="text-[10px] text-gray-400 leading-snug">
+                  * The dynamic details typed above will instantly overwrite the default layout template headers on your compiled PDF.
+                </p>
+              </div>
 
-            <div className="bg-slate-900 p-6 rounded-3xl space-y-4">
-                <h3 className="font-bold flex items-center gap-2"><Sparkles className="w-4 h-4 color-[#00A6FF]" /> Magic Mode</h3>
-                <input value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="e.g. 5 bags of sugar to Musa" className="w-full p-4 rounded-xl bg-slate-800 text-slate-100 border border-slate-700" />
-                <button onClick={() => generate(true)} className="w-full bg-[#00A6FF] py-3 rounded-xl font-bold hover:bg-blue-600">Generate Magic</button>
-            </div>
-
-            <div className="bg-slate-900 p-6 rounded-3xl space-y-4">
-                <h3 className="font-bold">Manual Mode</h3>
-                <input value={customer} onChange={e => setCustomer(e.target.value)} placeholder="Customer Name" className="w-full p-4 rounded-xl bg-slate-800 text-slate-100 border border-slate-700" />
-                <input value={product} onChange={e => setProduct(e.target.value)} placeholder="Product Name" className="w-full p-4 rounded-xl bg-slate-800 text-slate-100 border border-slate-700" />
-                <div className="flex gap-4">
-                    <input type="number" value={qty} onChange={e => setQty(parseInt(e.target.value))} placeholder="Qty" className="flex-1 p-4 rounded-xl bg-slate-800 text-slate-100 border border-slate-700" />
-                    <input type="number" value={price} onChange={e => setPrice(parseInt(e.target.value))} placeholder="Price" className="flex-1 p-4 rounded-xl bg-slate-800 text-slate-100 border border-slate-700" />
-                </div>
-                <button onClick={() => generate(false)} className="w-full bg-slate-700 py-3 rounded-xl font-bold hover:bg-slate-600">Generate Manual Invoice</button>
+              <div id="smart-widget" className="pt-2">
+                <SmartWidget onSaveParsedInvoice={handleSaveTrialInvoice} />
+              </div>
             </div>
         </div>
       </main>
       
-      <footer className="p-8 text-center text-slate-600 text-xs border-t border-slate-900 mx-auto w-full max-w-4xl">
-        <p>© 2026 Yeedem Tech. Optimized for Nigerian SMEs. Business Identity: Yeedem Tech | Team: Suleman & Sesan</p>
-      </footer>
-
-      {isLimitModalOpen && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-6 z-50">
-          <div className="bg-slate-900 rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-700 text-center space-y-6">
-            <h2 className="text-2xl font-bold text-white">Trial Limit Reached</h2>
-            <p className="text-slate-400">You have generated 2 free trial invoices. To continue generating unlimited professional invoices and managing your ledger securely, please sign up for an account.</p>
-            <button onClick={onLimitReached} className="w-full bg-[#00A6FF] text-white py-4 rounded-xl font-bold hover:bg-blue-600 shadow-lg shadow-blue-500/20">Sign Up Now</button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

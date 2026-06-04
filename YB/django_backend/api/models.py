@@ -3,41 +3,8 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.db.models import Sum
 
-def generate_biz_id():
-    return f"biz_{uuid.uuid4().hex[:12]}"
-
-def generate_cust_id():
-    return f"cust_{uuid.uuid4().hex[:12]}"
-
-def generate_prod_id():
-    return f"prod_{uuid.uuid4().hex[:12]}"
-
-def generate_notif_id():
-    return f"notif_{uuid.uuid4().hex[:12]}"
-
-def generate_inv_id():
-    return f"inv_{uuid.uuid4().hex[:12]}"
-
-def generate_item_id():
-    return f"item_{uuid.uuid4().hex[:12]}"
-
-def generate_supp_id():
-    return f"supp_{uuid.uuid4().hex[:12]}"
-
-def generate_restock_id():
-    return f"restock_{uuid.uuid4().hex[:12]}"
-
-def generate_bkp_id():
-    return f"bkp_{uuid.uuid4().hex[:12]}"
-
-def generate_staff_id():
-    return f"staff_{uuid.uuid4().hex[:12]}"
-
-def generate_log_id():
-    return f"log_{uuid.uuid4().hex[:12]}"
-
 class BusinessProfile(models.Model):
-    id = models.CharField(max_length=100, primary_key=True, default=generate_biz_id)
+    id = models.CharField(max_length=100, primary_key=True, default=lambda: f"biz_{uuid.uuid4().hex[:12]}")
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='business_profile')
     business_name = models.CharField(max_length=255, default="My SME Business")
     business_type = models.CharField(max_length=50, choices=[('buy_and_sell', 'Buy and Sell'), ('service', 'Service')], default='buy_and_sell')
@@ -80,7 +47,7 @@ class BusinessProfile(models.Model):
 
 
 class Customer(models.Model):
-    id = models.CharField(max_length=100, primary_key=True, default=generate_cust_id)
+    id = models.CharField(max_length=100, primary_key=True, default=lambda: f"cust_{uuid.uuid4().hex[:12]}")
     business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, related_name='customers')
     name = models.CharField(max_length=255)
     phone = models.CharField(max_length=50, blank=True, null=True)
@@ -100,7 +67,7 @@ class Customer(models.Model):
 
 
 class Product(models.Model):
-    id = models.CharField(max_length=100, primary_key=True, default=generate_prod_id)
+    id = models.CharField(max_length=100, primary_key=True, default=lambda: f"prod_{uuid.uuid4().hex[:12]}")
     business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, related_name='products')
     name = models.CharField(max_length=255)
     sku = models.CharField(max_length=100, blank=True, null=True)
@@ -123,7 +90,7 @@ class Product(models.Model):
 
 
 class LowStockNotification(models.Model):
-    id = models.CharField(max_length=100, primary_key=True, default=generate_notif_id)
+    id = models.CharField(max_length=100, primary_key=True, default=lambda: f"notif_{uuid.uuid4().hex[:12]}")
     business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, related_name='warnings')
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='notifications')
     message = models.CharField(max_length=255)
@@ -138,7 +105,7 @@ class LowStockNotification(models.Model):
 
 
 class Invoice(models.Model):
-    id = models.CharField(max_length=100, primary_key=True, default=generate_inv_id)
+    id = models.CharField(max_length=100, primary_key=True, default=lambda: f"inv_{uuid.uuid4().hex[:12]}")
     business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, related_name='invoices')
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='invoices')
     customerName = models.CharField(max_length=255, help_text="Flat name mapping of client")
@@ -179,7 +146,7 @@ class Invoice(models.Model):
 
 
 class InvoiceItem(models.Model):
-    id = models.CharField(max_length=100, primary_key=True, default=generate_item_id)
+    id = models.CharField(max_length=100, primary_key=True, default=lambda: f"item_{uuid.uuid4().hex[:12]}")
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='items')
     name = models.CharField(max_length=255)
     quantity = models.IntegerField(default=1)
@@ -193,7 +160,7 @@ class InvoiceItem(models.Model):
 
 
 class SupplierRecord(models.Model):
-    id = models.CharField(max_length=100, primary_key=True, default=generate_supp_id)
+    id = models.CharField(max_length=100, primary_key=True, default=lambda: f"supp_{uuid.uuid4().hex[:12]}")
     business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, related_name='suppliers')
     supplier_name = models.CharField(max_length=255)
     phone_number = models.CharField(max_length=50, blank=True, null=True)
@@ -205,7 +172,7 @@ class SupplierRecord(models.Model):
 
 
 class InventoryIntakeLog(models.Model):
-    id = models.CharField(max_length=100, primary_key=True, default=generate_restock_id)
+    id = models.CharField(max_length=100, primary_key=True, default=lambda: f"restock_{uuid.uuid4().hex[:12]}")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='restocks')
     supplier = models.ForeignKey(SupplierRecord, on_delete=models.SET_NULL, blank=True, null=True, related_name='stock_inputs')
     amount = models.IntegerField(default=0)
@@ -236,7 +203,7 @@ class MerchantSession(models.Model):
 
 
 class LedgerBackup(models.Model):
-    id = models.CharField(max_length=100, primary_key=True, default=generate_bkp_id)
+    id = models.CharField(max_length=100, primary_key=True, default=lambda: f"bkp_{uuid.uuid4().hex[:12]}")
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='ledgers_backups')
     filename = models.CharField(max_length=255)
     backup_data = models.JSONField()
@@ -250,7 +217,7 @@ class LedgerBackup(models.Model):
 
 
 class Staff(models.Model):
-    id = models.CharField(max_length=100, primary_key=True, default=generate_staff_id)
+    id = models.CharField(max_length=100, primary_key=True, default=lambda: f"staff_{uuid.uuid4().hex[:12]}")
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='staff_members')
     name_slug = models.CharField(max_length=100)
     real_name = models.CharField(max_length=255)
@@ -264,7 +231,7 @@ class Staff(models.Model):
 
 
 class StaffActivityLog(models.Model):
-    id = models.CharField(max_length=100, primary_key=True, default=generate_log_id)
+    id = models.CharField(max_length=100, primary_key=True, default=lambda: f"log_{uuid.uuid4().hex[:12]}")
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='staff_logs')
     staff = models.ForeignKey(Staff, on_delete=models.CASCADE, blank=True, null=True, related_name='logs')
     action_taken = models.CharField(max_length=255)

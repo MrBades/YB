@@ -8,11 +8,11 @@ from .views import (
     ProbeAuthView, VerifyOtpView, RegisterOnboardingView,
     SetPinView, PinLoginView, ResetForgottenPinView,
     ValidateSessionView, VerifySuspiciousOtpView, LogoutView,
-    UnlockAllView, BusinessSettingsView, BackupSaveView,
-    SmartProductProcessorAPIView,
+    UnlockAllView, AdminMigrateView, BusinessSettingsView, BackupSaveView,
+
     BackupListView, BackupDownloadView, BackupDeleteView,
     GuestInvoiceGenerateView, TerminalPinVerifyView,
-    StaffListView, StaffLogView, SystemMigrateView
+    StaffListView, StaffLogView
 )
 
 router = DefaultRouter()
@@ -30,8 +30,6 @@ urlpatterns = [
     # Smart inputs & analytics
     path('smart-input', SmartInputProcessorAPIView.as_view(), name='smart-input'),
     path('smart-input/', SmartInputProcessorAPIView.as_view(), name='smart-input-slash'),
-    path('smart-product', SmartProductProcessorAPIView.as_view(), name='smart-product'),
-    path('smart-product/', SmartProductProcessorAPIView.as_view()),
     path('dashboard-metrics/', DashboardMetricsAPIView.as_view(), name='dashboard-metrics'),
     path('dashboard-metrics', DashboardMetricsAPIView.as_view(), name='dashboard-metrics-no-slash'),
     
@@ -58,6 +56,8 @@ urlpatterns = [
     # Admin unlock all
     path('admin/unlock-all', UnlockAllView.as_view(), name='admin-unlock-all'),
     path('admin/unlock-all/', UnlockAllView.as_view()),
+    path('admin/migrate', AdminMigrateView.as_view(), name='admin-migrate'),
+    path('admin/migrate/', AdminMigrateView.as_view()),
     
     # Settings & preferences
     path('business/settings', BusinessSettingsView.as_view(), name='business-settings'),
@@ -81,5 +81,4 @@ urlpatterns = [
     path('staff/', StaffListView.as_view()),
     path('staff/log', StaffLogView.as_view(), name='staff-log'),
     path('staff/log/', StaffLogView.as_view()),
-    path('system/migrate', SystemMigrateView.as_view(), name='system-migrate'),
 ]
