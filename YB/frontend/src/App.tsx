@@ -148,8 +148,10 @@ export default function App() {
     const validateLocalSession = async () => {
       const storedSession = localStorage.getItem('session_id');
       if (storedSession) {
+        let res;
+        let data: any = null;
         try {
-          const res = await apiFetch('/api/auth/validate-session', {
+          res = await apiFetch('/api/auth/validate-session', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -160,7 +162,15 @@ export default function App() {
             body: JSON.stringify({ session_id: storedSession })
           });
           
-          let data: any = null;
+          if (res.status === 401) {
+            localStorage.removeItem('session_id');
+            localStorage.removeItem('active_screen');
+            setUserState(prev => ({ ...prev, authenticated: false, onboarded: false }));
+            setActiveScreen('landing');
+            setAuthChecking(false);
+            return;
+          }
+          
           try {
             const contentType = res.headers.get("content-type");
             if (contentType && contentType.includes("application/json")) {
@@ -169,6 +179,16 @@ export default function App() {
           } catch (jsonErr) {
             console.error("Non-fatal: Failed to parse validate-session JSON content:", jsonErr);
           }
+        } catch (err: any) {
+          if (err.message === 'Django API returned 401') {
+            localStorage.removeItem('session_id');
+            localStorage.removeItem('active_screen');
+            setUserState(prev => ({ ...prev, authenticated: false, onboarded: false }));
+            setActiveScreen('landing');
+          }
+          setAuthChecking(false);
+          return;
+        }
 
           if (res.status === 403 || (data && data.is_suspicious_locked)) {
             setIsSuspiciousLocked(true);
@@ -296,10 +316,7 @@ export default function App() {
             });
             setActiveScreen('landing');
           }
-        } catch (err) {
-          console.error("Session validation error:", err);
         }
-      }
       setAuthChecking(false);
     };
     

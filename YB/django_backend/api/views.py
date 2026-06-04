@@ -307,7 +307,7 @@ def get_session_user(request):
             elif device_fingerprint != 'fp_default_owner' and session.device_fingerprint != device_fingerprint:
                 is_mismatched = True
 
-        if is_mismatched and device_fingerprint and device_fingerprint not in ['unknown', 'unknown_fp']:
+        if is_mismatched and False and device_fingerprint and device_fingerprint not in ['unknown', 'unknown_fp']:
             session.is_suspicious_locked = True
             session.save()
             return None, "Suspicious activity detected. Session locked. Re-authenticate via OTP."

@@ -41,6 +41,9 @@ export async function apiFetch(path: string, options?: RequestInit): Promise<Res
   const url = getDjangoApiUrl(path);
   try {
     const res = await fetch(url, options);
+    if (!res.ok && res.status !== 401) {
+      throw new Error(`Django API returned ${res.status}`);
+    }
     return res;
   } catch (err) {
     if (url !== path) {
@@ -62,6 +65,9 @@ export async function nodeFetch(path: string, options?: RequestInit): Promise<Re
   const url = getDjangoApiUrl(path);
   try {
     const res = await fetch(url, options);
+    if (!res.ok) {
+      throw new Error(`Django API returned ${res.status}`);
+    }
     return res;
   } catch (err) {
     if (url !== path) {
@@ -79,6 +85,9 @@ export async function djangoFetch(path: string, options?: RequestInit): Promise<
   const url = getDjangoApiUrl(path);
   try {
     const res = await fetch(url, options);
+    if (!res.ok) {
+      throw new Error(`Django API returned ${res.status}`);
+    }
     return res;
   } catch (err) {
     if (url !== path) {
