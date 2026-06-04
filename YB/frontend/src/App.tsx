@@ -2639,12 +2639,6 @@ export default function App() {
                   >
                     Terms of Service
                   </button>
-                  <button
-                    onClick={() => setActiveScreen('login')}
-                    className="px-4 py-1.5 rounded-xl bg-white text-[#0E1338] font-bold hover:bg-gray-100 transition"
-                  >
-                    Login
-                  </button>
                 </nav>
               )}
 
@@ -3270,7 +3264,7 @@ export default function App() {
                   case 'ai_widget':
                     return (
                       <div key="ai_widget" id="tour-smart-widget" className="animate-scaleIn w-full">
-                        <SmartWidget onSaveParsedInvoice={saveInvoice} isService={isService} />
+                        <SmartWidget onSaveParsedInvoice={saveInvoice} isService={isService} isInvoice={true} />
                       </div>
                     );
 

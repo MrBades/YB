@@ -20,6 +20,7 @@ import { apiFetch } from '../lib/api';
 
 interface SmartWidgetProps {
   isService?: boolean;
+  isInvoice?: boolean;
   onSaveParsedInvoice: (parsedInvoice: {
     customerName: string;
     productName: string;
@@ -31,7 +32,7 @@ interface SmartWidgetProps {
   }) => void;
 }
 
-export default function SmartWidget({ onSaveParsedInvoice, isService = false }: SmartWidgetProps) {
+export default function SmartWidget({ onSaveParsedInvoice, isService = false, isInvoice = false }: SmartWidgetProps) {
   // Tabs: 'online_or_ai', 'parser_or_offline', 'manual'
   const [activeTab, setActiveTab] = useState<'online_or_ai' | 'parser_or_offline' | 'manual'>('online_or_ai');
   const [text, setText] = useState('');
@@ -532,7 +533,7 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
       }
 
       console.log("Preparing to dispatch to /api/smart-input...");
-      const res = await apiFetch('/api/smart-input', {
+      const res = await fetch('/api/smart-input', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -549,8 +550,8 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         const text = await res.text();
-        console.error("Non-JSON response:", text);
-        throw new Error("Server returned non-JSON response (possibly an error page).");
+        console.error("Non-JSON response:", text.substring(0, 200));
+        throw new Error(`Server returned non-JSON response (status: ${res.status}): ${text.substring(0, 100)}...`);
       }
 
       const data = await res.json();
@@ -978,7 +979,7 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false }: 
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4 text-[#00A6FF] shrink-0" />
-                      <span>✨ Generate Invoice</span>
+                      <span>{isInvoice ? "Generate Invoice" : (isService ? "+ Save Service Offering" : "+ Add New Product")}</span>
                     </>
                   )}
                 </button>

@@ -41,7 +41,14 @@ export async function apiFetch(path: string, options?: RequestInit): Promise<Res
   const url = getDjangoApiUrl(path);
   try {
     const res = await fetch(url, options);
-    if (!res.ok && res.status !== 401) {
+    if (res.status === 401) {
+      console.warn("Unauthorized API call, clearing session and reloading:", path);
+      localStorage.removeItem('session_id');
+      localStorage.removeItem('active_screen');
+      window.location.reload();
+      return res;
+    }
+    if (!res.ok) {
       throw new Error(`Django API returned ${res.status}`);
     }
     return res;
@@ -65,6 +72,13 @@ export async function nodeFetch(path: string, options?: RequestInit): Promise<Re
   const url = getDjangoApiUrl(path);
   try {
     const res = await fetch(url, options);
+    if (res.status === 401) {
+        console.warn("Unauthorized nodeFetch call, clearing session and reloading:", path);
+        localStorage.removeItem('session_id');
+        localStorage.removeItem('active_screen');
+        window.location.reload();
+        return res;
+    }
     if (!res.ok) {
       throw new Error(`Django API returned ${res.status}`);
     }
@@ -85,6 +99,13 @@ export async function djangoFetch(path: string, options?: RequestInit): Promise<
   const url = getDjangoApiUrl(path);
   try {
     const res = await fetch(url, options);
+    if (res.status === 401) {
+        console.warn("Unauthorized djangoFetch call, clearing session and reloading:", path);
+        localStorage.removeItem('session_id');
+        localStorage.removeItem('active_screen');
+        window.location.reload();
+        return res;
+    }
     if (!res.ok) {
       throw new Error(`Django API returned ${res.status}`);
     }

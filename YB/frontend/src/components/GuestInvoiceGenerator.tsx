@@ -194,7 +194,7 @@ export default function GuestInvoiceGenerator({ onFinish, onLimitReached, device
               </div>
 
               <div id="smart-widget" className="pt-2">
-                <SmartWidget onSaveParsedInvoice={handleSaveTrialInvoice} />
+                <SmartWidget onSaveParsedInvoice={handleSaveTrialInvoice} isInvoice={true} />
               </div>
             </div>
         </div>

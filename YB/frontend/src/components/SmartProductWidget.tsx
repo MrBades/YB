@@ -252,7 +252,7 @@ export default function SmartProductWidget({ onSaveProduct, isService = false }:
                   ) : (
                     <>
                       <Sparkles className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
-                      <span>Extract Product</span>
+                      <span>{isService ? "+ Save Service Offering" : "+ Add New Product"}</span>
                     </>
                   )}
                 </button>
