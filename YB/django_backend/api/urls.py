@@ -12,7 +12,8 @@ from .views import (
 
     BackupListView, BackupDownloadView, BackupDeleteView,
     GuestInvoiceGenerateView, TerminalPinVerifyView,
-    StaffListView, StaffLogView
+    StaffListView, StaffLogView,
+    ProcessPaymentView, VerifyPaymentView, WhatsAppWebhookView
 )
 
 router = DefaultRouter()
@@ -81,4 +82,14 @@ urlpatterns = [
     path('staff/', StaffListView.as_view()),
     path('staff/log', StaffLogView.as_view(), name='staff-log'),
     path('staff/log/', StaffLogView.as_view()),
+    
+    # WhatsApp Webhook
+    path('auth/whatsapp-webhook', WhatsAppWebhookView.as_view(), name='auth-whatsapp-webhook'),
+    path('auth/whatsapp-webhook/', WhatsAppWebhookView.as_view()),
+    
+    # Payments
+    path('payment/initialize', ProcessPaymentView.as_view(), name='payment-initialize'),
+    path('payment/initialize/', ProcessPaymentView.as_view()),
+    path('payment/verify', VerifyPaymentView.as_view(), name='payment-verify'),
+    path('payment/verify/', VerifyPaymentView.as_view()),
 ]

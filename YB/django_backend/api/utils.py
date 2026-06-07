@@ -94,7 +94,7 @@ def parse_multimodal_smart_input(text=None, image_file=None, audio_file=None):
             )
 
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.5-flash',
                 contents=contents_parts,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -217,3 +217,23 @@ def run_local_fallback_parser(text):
         ]
 
     return invoice_data
+
+
+def normalize_contact(phone_or_email):
+    if not isinstance(phone_or_email, str):
+        return ""
+    input_str = phone_or_email.strip()
+    clean_phone_check = re.sub(r'[\s\-\(\)]', '', input_str)
+    
+    is_email = "@" in input_str and "." in input_str
+    # Simple check for Nigeria-like numbers or international format
+    is_phone = re.match(r'^\+?[0-9]{8,15}$', clean_phone_check)
+
+    if is_phone and not is_email:
+        if clean_phone_check.startswith("0") and len(clean_phone_check) == 11:
+            return "+234" + clean_phone_check[1:]
+        elif not clean_phone_check.startswith("+") and not clean_phone_check.startswith("0") and len(clean_phone_check) == 10:
+            return "+234" + clean_phone_check
+        else:
+            return ("+" if clean_phone_check.startswith("+") else "") + re.sub(r'\D', '', clean_phone_check)
+    return input_str

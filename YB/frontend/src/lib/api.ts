@@ -41,7 +41,7 @@ export async function apiFetch(path: string, options?: RequestInit): Promise<Res
   const url = getDjangoApiUrl(path);
   try {
     const res = await fetch(url, options);
-    if (res.status === 401) {
+    if (res.status === 401 && !path.includes('/backup') && !path.includes('/api/backup')) {
       console.warn("Unauthorized API call, clearing session and reloading:", path);
       localStorage.removeItem('session_id');
       localStorage.removeItem('active_screen');
@@ -66,13 +66,10 @@ export async function apiFetch(path: string, options?: RequestInit): Promise<Res
  * Redirects to Django REST API if DJANGO_API_BASE_URL is set, except for payment endpoints.
  */
 export async function nodeFetch(path: string, options?: RequestInit): Promise<Response> {
-  if (path.includes('/api/payment')) {
-    return fetch(path, options);
-  }
   const url = getDjangoApiUrl(path);
   try {
     const res = await fetch(url, options);
-    if (res.status === 401) {
+    if (res.status === 401 && !path.includes('/backup') && !path.includes('/api/backup')) {
         console.warn("Unauthorized nodeFetch call, clearing session and reloading:", path);
         localStorage.removeItem('session_id');
         localStorage.removeItem('active_screen');
@@ -99,7 +96,7 @@ export async function djangoFetch(path: string, options?: RequestInit): Promise<
   const url = getDjangoApiUrl(path);
   try {
     const res = await fetch(url, options);
-    if (res.status === 401) {
+    if (res.status === 401 && !path.includes('/backup') && !path.includes('/api/backup')) {
         console.warn("Unauthorized djangoFetch call, clearing session and reloading:", path);
         localStorage.removeItem('session_id');
         localStorage.removeItem('active_screen');

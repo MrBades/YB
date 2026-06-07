@@ -141,48 +141,7 @@ app.post("/api/auth/probe", (req, res) => {
     });
 });
 
-app.post("/api/auth/whatsapp-webhook", (req, res) => {
-    const { from_number, message } = req.body;
-    
-    if (!message) return res.status(200).json({ status: "ignored", message: "No message" });
-    
-    // Strict parsing
-    const regex = /^Verify my Yeedem account code:\s*(\d{6})/i;
-    const match = message.match(regex);
-    if (!match) return res.status(200).json({ status: "ignored", message: "Not an auth message" });
-    
-    const token = match[1];
-    
-    const db = readDB();
-    
-    // Find matching pending verification
-    const verification = (db.whatsappVerifications || []).find(
-        (v: any) => normalizeContact(v.phone) === normalizeContact(from_number) && v.code === token && v.status === 'pending' && v.expiresAt > Date.now()
-    );
 
-    if (verification) {
-        verification.status = 'verified';
-        
-        // Also update user verification state
-        const user = db.users.find((u: any) => normalizeContact(u.phone_or_email) === normalizeContact(verification.phone));
-        if (user) {
-            user.isVerified = true;
-            // Automatically clear suspicious locks for this user's active sessions too
-            if (db.merchantSessions) {
-                db.merchantSessions.forEach((s: any) => {
-                    if (s.user_id === user.id) {
-                        s.is_suspicious_locked = false;
-                    }
-                });
-            }
-        }
-
-        writeDB(db);
-        return res.json({ status: "success" });
-    }
-    
-    res.status(400).json({ error: "Invalid verification code or phone number." });
-});
 
 app.post("/api/auth/check-verification-status", (req, res) => {
     const { phone_or_email } = req.body;

@@ -142,6 +142,7 @@ CORS_ALLOW_HEADERS = [
 # Django REST Framework Settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
+        'api.auth.MerchantSessionAuthentication',
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ),

@@ -533,7 +533,7 @@ export default function SmartWidget({ onSaveParsedInvoice, isService = false, is
       }
 
       console.log("Preparing to dispatch to /api/smart-input...");
-      const res = await fetch('/api/smart-input', {
+      const res = await apiFetch('/api/smart-input', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
